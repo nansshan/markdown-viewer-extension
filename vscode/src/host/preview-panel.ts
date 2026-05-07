@@ -1094,7 +1094,8 @@ export class MarkdownPreviewPanel {
       fontSize: config.get('fontSize', 16),
       fontFamily: config.get('fontFamily', ''),
       lineNumbers: config.get('lineNumbers', true),
-      scrollSync: config.get('scrollSync', true)
+      scrollSync: config.get('scrollSync', true),
+      deferAsyncRenderUntilFirstPaint: config.get('deferAsyncRenderUntilFirstPaint', false)
     };
   }
 
@@ -1217,7 +1218,7 @@ export class MarkdownPreviewPanel {
     <div id="vscode-content">
       <div id="markdown-wrapper">
         <div id="markdown-page">
-          <div id="markdown-content" style="visibility: hidden;"></div>
+          <div id="markdown-content"></div>
         </div>
       </div>
     </div>

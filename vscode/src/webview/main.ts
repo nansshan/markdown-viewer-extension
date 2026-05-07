@@ -106,8 +106,10 @@ async function initialize(): Promise<void> {
     // Initialize toolbar and settings panel (after theme is loaded)
     initializeUI();
 
-    // Render iframe is lazily created on first render request
-    // No pre-initialization needed - ensureReady() is called in render()
+    // Pre-initialize render iframe in background to reduce first diagram/html render latency
+    platform.renderer.ensureReady().catch((error: Error) => {
+      console.warn('[VSCode Webview] Render frame pre-init failed:', error?.message, error?.stack);
+    });
 
     // Load and apply initial theme (all theme logic is in loadAndApplyTheme)
     try {
@@ -346,6 +348,7 @@ async function handleUpdateContent(payload: UpdateContentPayload): Promise<void>
     platform,
     currentTaskManagerRef: { current: currentTaskManager },
     targetLine: scrollLine,
+    deferAsyncRenderUntilFirstPaint: window.VSCODE_CONFIG?.deferAsyncRenderUntilFirstPaint === true,
     onHeadings: (headings) => {
       tocPanel?.setHeadings(headings as HeadingInfo[]);
       updateActiveTocHeading();

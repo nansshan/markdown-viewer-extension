@@ -510,6 +510,11 @@
           "default": true,
           "description": "Synchronize scrolling between editor and preview"
         },
+        "markdownViewer.deferAsyncRenderUntilFirstPaint": {
+          "type": "boolean",
+          "default": false,
+          "description": "Delay the async render queue until after the first preview paint. Can improve initial responsiveness for heavy documents."
+        },
         "markdownViewer.markdownViewerSettings": {
           "type": "object",
           "default": {},

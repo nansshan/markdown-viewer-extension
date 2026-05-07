@@ -562,6 +562,12 @@ export interface RenderMarkdownFlowOptions {
    * - Chrome: Hide processing indicator
    */
   afterProcessAll?: () => void;
+
+  /**
+   * Delay async task processing until the first visual paint has happened.
+   * Intended for heavy initial renders where first-screen responsiveness matters more.
+   */
+  deferAsyncRenderUntilFirstPaint?: boolean;
   
   /**
    * Called after render completes successfully.
@@ -637,19 +643,22 @@ export async function renderMarkdownFlow(options: RenderMarkdownFlowOptions): Pr
     onProgress,
     beforeProcessAll,
     afterProcessAll,
+    deferAsyncRenderUntilFirstPaint,
     afterRender,
   } = options;
 
   const hasRenderableContent = markdown.trim().length > 0;
 
-  const setContainerVisible = (visible: boolean): void => {
-    container.style.visibility = visible ? '' : 'hidden';
-    // Also reveal the outer #markdown-content wrapper (e.g. Chrome, where the render
-    // container is a child element inside #markdown-content).
-    const outerContent = container.closest('#markdown-content') as HTMLElement | null;
-    if (outerContent && outerContent !== container) {
-      outerContent.style.visibility = visible ? '' : 'hidden';
-    }
+  const waitForNextPaint = async (): Promise<void> => {
+    await new Promise<void>((resolve) => {
+      if (typeof requestAnimationFrame === 'function') {
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => resolve());
+        });
+        return;
+      }
+      setTimeout(() => resolve(), 16);
+    });
   };
 
   // Abort any previous rendering task
@@ -663,8 +672,6 @@ export async function renderMarkdownFlow(options: RenderMarkdownFlowOptions): Pr
     const taskManager = new AsyncTaskManager(translate);
     currentTaskManagerRef.current = taskManager;
 
-    // First render from an empty container should stay hidden until base
-    // markdown content has been inserted, otherwise users see an empty shell block.
     const hadContentBeforeRender = container.childNodes.length > 0;
 
     // Determine if we need to clear container
@@ -681,16 +688,6 @@ export async function renderMarkdownFlow(options: RenderMarkdownFlowOptions): Pr
       if (isRealFileSwitch && fileChanged) {
         scrollController?.reset();
       }
-    }
-
-    if (!hasRenderableContent) {
-      setContainerVisible(false);
-    } else if (hadContentBeforeRender) {
-      // Updating existing content: reveal immediately to avoid flicker.
-      setContainerVisible(true);
-    } else {
-      // Initial content paint: keep hidden until first chunk is rendered.
-      setContainerVisible(false);
     }
 
     // Set target line for scroll sync
@@ -757,10 +754,6 @@ export async function renderMarkdownFlow(options: RenderMarkdownFlowOptions): Pr
       },
     });
 
-    if (hasRenderableContent && !hadContentBeforeRender) {
-      setContainerVisible(true);
-    }
-
     if (taskManager.isAborted()) {
       return;
     }
@@ -773,6 +766,13 @@ export async function renderMarkdownFlow(options: RenderMarkdownFlowOptions): Pr
       } else {
         queueMicrotask(afterRender);
       }
+    }
+
+    const shouldDeferAsyncQueue = Boolean(
+      deferAsyncRenderUntilFirstPaint && hasRenderableContent && !hadContentBeforeRender
+    );
+    if (shouldDeferAsyncQueue) {
+      await waitForNextPaint();
     }
 
     // Process async tasks (diagrams, charts).
@@ -828,10 +828,7 @@ export async function renderMarkdownFlow(options: RenderMarkdownFlowOptions): Pr
       currentTaskManagerRef.current = null;
     }
 
-    setContainerVisible(hasRenderableContent);
-
   } catch (error) {
-    setContainerVisible(hasRenderableContent);
     // eslint-disable-next-line no-console
     console.error('[ViewerHost] Render failed:', error);
   }

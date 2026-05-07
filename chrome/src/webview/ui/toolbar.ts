@@ -543,7 +543,7 @@ export function generateToolbarHTML(options: GenerateToolbarHTMLOptions): string
       <div id="viewer-main-column">
         <div id="markdown-wrapper">
           <div id="markdown-page" style="max-width: ${initialMaxWidth};">
-            <div id="markdown-content" style="zoom: ${initialZoom / 100}; visibility: hidden;"></div>
+            <div id="markdown-content" style="zoom: ${initialZoom / 100};"></div>
           </div>
         </div>
       </div>

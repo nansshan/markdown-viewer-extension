@@ -597,6 +597,15 @@ body.toc-position-right.toc-hidden #markdown-wrapper {
   box-sizing: border-box;
 }
 
+#markdown-content:empty {
+  height: 0;
+  min-height: 0;
+  padding: 0;
+  box-shadow: none;
+  background: transparent;
+  overflow: hidden;
+}
+
 #markdown-content h1,
 #markdown-content h2,
 #markdown-content h3,
