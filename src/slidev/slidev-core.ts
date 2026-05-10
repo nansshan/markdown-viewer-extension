@@ -70,6 +70,25 @@ export interface ParseResult {
   diagramJobs: DiagramJob[]
 }
 
+const SLIDEV_FRONTMATTER_KEYS = new Set([
+  'theme',
+  'layout',
+  'transition',
+  'class',
+  'colorSchema',
+  'themeConfig',
+  'canvasWidth',
+  'aspectRatio',
+  'mdc',
+  'drawings',
+  'lineNumbers',
+  'routerMode',
+  'presenter',
+  'remoteAssets',
+  'download',
+  'downloadable',
+])
+
 /** Callback that returns the HTML to embed for a diagram code block. */
 export type DiagramPlaceholderFn = (id: number) => string
 
@@ -296,6 +315,61 @@ export function createMarkdownRenderer(placeholderFn: DiagramPlaceholderFn) {
 // ── Slide parser ───────────────────────────────────────────────────────
 
 const slotSeparator = /^::(\w+)::$/
+
+function hasSlidevFrontmatter(frontmatter: unknown): boolean {
+  if (!frontmatter || typeof frontmatter !== 'object') {
+    return false
+  }
+
+  for (const key of Object.keys(frontmatter as Record<string, unknown>)) {
+    if (SLIDEV_FRONTMATTER_KEYS.has(key)) {
+      return true
+    }
+  }
+
+  return false
+}
+
+/**
+ * Best-effort Slidev detection for plain `.md`/`.markdown` files.
+ *
+ * Strategy:
+ * 1) explicit Slidev-only syntax (`v-click`, slot markers, etc.)
+ * 2) Slidev-specific frontmatter keys parsed by @slidev/parser
+ * 3) weak fallback: many short slides after parser split
+ */
+export function isLikelySlidevMarkdown(rawContent: string): boolean {
+  if (!rawContent || !rawContent.trim()) {
+    return false
+  }
+
+  const explicitSyntax = /<v-clicks?\b|\bv-click(?:\b|=)|^::\w+::$/m.test(rawContent)
+
+  try {
+    const parsed = parseSync(rawContent, '')
+    const slides = parsed?.slides || []
+    if (slides.length === 0) {
+      return explicitSyntax
+    }
+
+    if (slides.some((slide: any) => hasSlidevFrontmatter(slide?.frontmatter))) {
+      return true
+    }
+
+    if (explicitSyntax) {
+      return true
+    }
+
+    if (slides.length >= 3) {
+      const shortSlides = slides.filter((slide: any) => String(slide?.content || '').trim().length <= 500).length
+      return shortSlides / slides.length >= 0.7
+    }
+
+    return false
+  } catch {
+    return explicitSyntax
+  }
+}
 
 export function parseSlides(rawContent: string, placeholderFn: DiagramPlaceholderFn): ParseResult {
   const { md, diagramJobs } = createMarkdownRenderer(placeholderFn)

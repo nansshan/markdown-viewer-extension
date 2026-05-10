@@ -13,6 +13,7 @@ import { platform, obsidianBridge } from './api-impl';
 import type { AsyncTaskManager, FrontmatterDisplay, HeadingInfo } from '../../../src/core/markdown-processor';
 import { wrapFileContent } from '../../../src/utils/file-wrapper';
 import { initSlidevViewer } from '../../../src/slidev/slidev-viewer';
+import { isLikelySlidevMarkdown } from '../../../src/slidev/slidev-core';
 import type { ScrollSyncController } from '../../../src/core/line-based-scroll';
 import type { EmojiStyle } from '../../../src/types/docx.js';
 
@@ -337,7 +338,11 @@ async function handleUpdateContent(payload: UpdateContentPayload): Promise<void>
   currentFilename = newFilename;
 
   // ── Slidev mode: .slides.md files render as presentations ────────────
-  if (newFilename.endsWith('.slides.md')) {
+  const lowerFilename = newFilename.toLowerCase();
+  const isSlidevByExtension = lowerFilename.endsWith('.slides.md');
+  const isMarkdownLikeFile = lowerFilename.endsWith('.md') || lowerFilename.endsWith('.markdown');
+  const isSlidevByContent = !isSlidevByExtension && isMarkdownLikeFile && isLikelySlidevMarkdown(content);
+  if (isSlidevByExtension || isSlidevByContent) {
     isSlidevMode = true;
     tocPanel?.setHeadings([]);
 
