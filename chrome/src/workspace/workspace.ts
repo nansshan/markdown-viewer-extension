@@ -212,6 +212,10 @@ const PREVIEW_IMAGE_EXTENSIONS = new Set([
   'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico', 'svg',
 ]);
 
+const DIRECT_HTML_PREVIEW_EXTENSIONS = new Set([
+  'html', 'htm',
+]);
+
 const IMAGE_EXTENSIONS = new Set([
   'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico', 'svg',
   'mp3', 'mp4', 'wav', 'ogg', 'webm', 'avi', 'mov',
@@ -826,6 +830,13 @@ async function openFile(fileHandle: FileSystemFileHandle, options?: { targetLine
 
   if (PREVIEW_IMAGE_EXTENSIONS.has(ext)) {
     await showImagePreview(file, name, ext);
+    return;
+  }
+
+  if (DIRECT_HTML_PREVIEW_EXTENSIONS.has(ext)) {
+    $previewEmpty.style.display = 'none';
+    $previewFrame.style.display = 'block';
+    $previewFrame.src = URL.createObjectURL(file);
     return;
   }
 
