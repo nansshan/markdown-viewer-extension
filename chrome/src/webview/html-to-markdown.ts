@@ -62,7 +62,7 @@ if (window.__markdownViewerInjected) {
       const reader = new Readability(documentClone);
       const article = reader.parse();
       if (article) {
-        articleContent = article.content;
+        articleContent = article.content || null;
         if (article.title) articleTitle = article.title;
       }
     }
@@ -99,7 +99,7 @@ if (window.__markdownViewerInjected) {
     'script',
     'style',
     'noscript',
-    'svg',
+    'svg' as any,
     'iframe',
     'canvas',
     'form',

@@ -5,7 +5,6 @@ import { initializeViewerBase } from '../../../src/core/viewer/viewer-bootstrap'
 
 declare global {
   interface Window {
-    __markdownViewerOriginalNode?: Node;
     __markdownViewerOriginalScroll?: { x: number; y: number };
     __markdownViewerInjected?: boolean;
     __markdownViewerRestoreHandler?: (message: any) => void;
@@ -17,24 +16,25 @@ if (window.__markdownViewerInjected) {
 } else {
   window.__markdownViewerInjected = true;
   // Save original DOM and scroll position BEFORE viewer replaces the body
-  window.__markdownViewerOriginalNode = document.documentElement.cloneNode(true);
   window.__markdownViewerOriginalScroll = { x: window.scrollX, y: window.scrollY };
 
   // Listen for restore message
   const handleMessage = (message: any) => {
-    if (message?.type === 'RESTORE_ORIGINAL_VIEW' && window.__markdownViewerOriginalNode) {
-      // Restore the DOM
-      document.replaceChild(window.__markdownViewerOriginalNode, document.documentElement);
-      
-      // Restore scroll position
-      window.scrollTo(
-        window.__markdownViewerOriginalScroll?.x || 0,
-        window.__markdownViewerOriginalScroll?.y || 0
-      );
-      
+    if (message?.type === 'RESTORE_ORIGINAL_VIEW') {
       // Cleanup
       window.__markdownViewerInjected = false;
       chrome.runtime.onMessage.removeListener(handleMessage);
+      
+      // Set override flag for content-detector so it doesn't automatically re-inject on reload
+      try {
+        sessionStorage.setItem('markdownViewerRawOverride', '1');
+      } catch (e) {
+        // storage access might be blocked by restrictive settings
+      }
+
+      // Instead of complex DOM manipulation which breaks React and Next.js, 
+      // the safest way to restore complex JS applications is natively reloading the page.
+      window.location.reload();
     }
   };
   chrome.runtime.onMessage.addListener(handleMessage);

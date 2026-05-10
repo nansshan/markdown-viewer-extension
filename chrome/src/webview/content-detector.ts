@@ -109,6 +109,15 @@ function hidePageContent(): void {
  * Inject the main content script
  */
 function injectContentScript(): void {
+  // If user explicitly marked this session to view as raw, abort.
+  try {
+    if (sessionStorage.getItem('markdownViewerRawOverride') === '1') {
+      return;
+    }
+  } catch (e) {
+    // sessionStorage access denied
+  }
+
   // Hide content immediately before injection to prevent flashing
   hidePageContent();
 

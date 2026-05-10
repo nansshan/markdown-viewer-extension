@@ -708,7 +708,7 @@ chrome.runtime.onMessage.addListener((message: BackgroundMessage, sender, sendRe
   // New service envelope: dynamic content script injection (preferred)
   if (isRequestEnvelope(message) && message.type === 'INJECT_CONTENT_SCRIPT') {
     const injectionUrl = (message.payload as { url?: string })?.url;
-    handleContentScriptInjection(sender.tab?.id || 0, injectionUrl)
+    handleContentScriptInjection(sender.tab?.id || 0, !!injectionUrl)
       .then(() => {
         const tabId = sender.tab?.id;
         if (tabId) {
@@ -1249,11 +1249,18 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
           });
         } else {
           // Current page - always run html-to-markdown converter first
-          handleContentScriptInjection(tabId, true).then(() => {
-            injectedTabs.add(tabId);
-            updateContextMenu(tabId);
-          }).catch((error) => {
-            console.error('Failed to inject content script:', error);
+          chrome.scripting.executeScript({
+            target: { tabId },
+            func: () => {
+              try { sessionStorage.removeItem('markdownViewerRawOverride'); } catch (e) {}
+            }
+          }).finally(() => {
+            handleContentScriptInjection(tabId, true).then(() => {
+              injectedTabs.add(tabId);
+              updateContextMenu(tabId);
+            }).catch((error) => {
+              console.error('Failed to inject content script:', error);
+            });
           });
         }
       } else {
