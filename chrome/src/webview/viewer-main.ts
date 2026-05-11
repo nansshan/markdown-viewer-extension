@@ -33,6 +33,7 @@ import {
   setCurrentFileKey,
 } from '../../../src/core/viewer/viewer-host';
 import { setupImageContextMenu } from '../../../src/ui/image-context-menu';
+import { setupDiagramLightbox } from '../../../src/ui/diagram-lightbox';
 
 // Extend Window interface for global access
 declare global {
@@ -1141,11 +1142,15 @@ export async function initializeViewerMain(options: ViewerMainOptions): Promise<
       return;
     }
 
-    chrome.runtime.sendMessage({
-      id: `stop-tracking-${Date.now()}`,
-      type: 'STOP_FILE_TRACKING',
-      payload: { url: activeUrl },
-    });
+    try {
+      chrome.runtime.sendMessage({
+        id: `stop-tracking-${Date.now()}`,
+        type: 'STOP_FILE_TRACKING',
+        payload: { url: activeUrl },
+      });
+    } catch {
+      // Context invalidated after extension reload
+    }
   }
 
   window.addEventListener('beforeunload', () => {
@@ -1184,6 +1189,12 @@ export async function initializeViewerMain(options: ViewerMainOptions): Promise<
           URL.revokeObjectURL(url);
         }, 100);
       },
+      translate: (key) => Localization.translate(key),
+    });
+
+    // Setup diagram lightbox for click-to-zoom (shared cross-platform)
+    setupDiagramLightbox({
+      container: contentContainer,
       translate: (key) => Localization.translate(key),
     });
   }

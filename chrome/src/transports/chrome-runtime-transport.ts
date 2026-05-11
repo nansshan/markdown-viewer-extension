@@ -37,11 +37,14 @@ export class ChromeRuntimeTransport implements MessageTransport {
   }
 
   async send(message: unknown): Promise<unknown> {
+    if (!chrome.runtime?.id) return undefined;
+
     // Firefox browser.runtime.sendMessage returns a Promise
     // Chrome also supports Promise in modern versions
     try {
       return await runtimeApi.runtime.sendMessage(message);
     } catch (error) {
+      if (!chrome.runtime?.id) return undefined;
       // Fallback for older Chrome callback style
       return new Promise((resolve, reject) => {
         chrome.runtime.sendMessage(message, (response) => {
@@ -57,22 +60,28 @@ export class ChromeRuntimeTransport implements MessageTransport {
 
   onMessage(handler: (message: unknown, meta?: TransportMeta) => void): Unsubscribe {
     this.listener = (message, sender, sendResponse) => {
+      if (!chrome.runtime?.id) return false;
       const meta: TransportMeta = {
         raw: sender,
         respond: sendResponse,
       };
       handler(message, meta);
-      // Return willRespond to indicate whether we'll send an async response.
-      // Background scripts need true; popup/content scripts need false to
-      // prevent Firefox's "Promised response went out of scope" errors.
       return this.willRespond;
     };
 
-    runtimeApi.runtime.onMessage.addListener(this.listener);
+    try {
+      runtimeApi.runtime.onMessage.addListener(this.listener);
+    } catch {
+      // Context invalidated after extension reload
+    }
 
     return () => {
       if (this.listener) {
-        runtimeApi.runtime.onMessage.removeListener(this.listener);
+        try {
+          runtimeApi.runtime.onMessage.removeListener(this.listener);
+        } catch {
+          // Extension context may be invalidated
+        }
         this.listener = undefined;
       }
     };

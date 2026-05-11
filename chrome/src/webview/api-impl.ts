@@ -232,11 +232,15 @@ export class ChromeMessageService {
   }
 
   addListener(handler: (message: unknown) => void): void {
-    chrome.runtime.onMessage.addListener((message) => {
-      // Event-only listener: envelope RPC is handled via send/sendEnvelope.
-      handler(message);
-      return false;
-    });
+    try {
+      chrome.runtime.onMessage.addListener((message) => {
+        if (!chrome.runtime?.id) return false;
+        handler(message);
+        return false;
+      });
+    } catch {
+      // Context invalidated after extension reload
+    }
   }
 }
 

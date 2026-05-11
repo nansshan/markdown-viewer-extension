@@ -35,6 +35,7 @@ import { createSettingsPanel, type SettingsPanel, type ThemeOption, type LocaleO
 import { createSearchPanel, type SearchPanel, type HighlightMatch, type SearchOptions } from './search-panel';
 import { createTocPanel, type TocPanel } from '../../../src/ui/toc-panel';
 import { setupImageContextMenu } from '../../../src/ui/image-context-menu';
+import { setupDiagramLightbox } from '../../../src/ui/diagram-lightbox';
 import { createExportMenu, type ExportMenu } from '../../../src/ui/export-menu';
 import { printElement } from '../../../src/ui/print-utils';
 import { isExternalUrl, splitPathAndFragment } from '../../../src/utils/document-url';
@@ -756,6 +757,12 @@ function initializeUI(): void {
       onDownload: ({ filename, data, mimeType }) => {
         vscodeBridge.sendRequest('DOWNLOAD_FILE', { filename, data, mimeType });
       },
+      translate: (key) => Localization.translate(key),
+    });
+
+    // Setup diagram lightbox for click-to-zoom (shared cross-platform)
+    setupDiagramLightbox({
+      container: contentContainer,
       translate: (key) => Localization.translate(key),
     });
   }
