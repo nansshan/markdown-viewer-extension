@@ -694,5 +694,9 @@
   "zoom": {
     "message": "Zoomaus",
     "description": "Menu item for zoom"
+  },
+  "contextMenu_viewAsRaw": {
+    "message": "View as Raw",
+    "description": "Context menu item to restore the page to its original state"
   }
 }

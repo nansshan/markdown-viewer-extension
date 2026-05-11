@@ -22,10 +22,14 @@ export interface HtmlConvertedMarkdown {
 declare global {
   interface Window {
     __mvHtmlConvertedMarkdown?: HtmlConvertedMarkdown;
+    __markdownViewerInjected?: boolean;
   }
 }
 
-function convertHtmlPageToMarkdown(): HtmlConvertedMarkdown | null {
+if (window.__markdownViewerInjected) {
+  console.log('[html-to-markdown] Markdown Viewer already injected, skipping DOM convert.');
+} else {
+  function convertHtmlPageToMarkdown(): HtmlConvertedMarkdown | null {
   // Self-detect: only convert if the page is a rendered HTML document.
   // For raw files (text/plain, application/octet-stream, etc.) the viewer
   // can render them directly from document.body.textContent.
@@ -58,7 +62,7 @@ function convertHtmlPageToMarkdown(): HtmlConvertedMarkdown | null {
       const reader = new Readability(documentClone);
       const article = reader.parse();
       if (article) {
-        articleContent = article.content;
+        articleContent = article.content || null;
         if (article.title) articleTitle = article.title;
       }
     }
@@ -95,7 +99,7 @@ function convertHtmlPageToMarkdown(): HtmlConvertedMarkdown | null {
     'script',
     'style',
     'noscript',
-    'svg',
+    'svg' as any,
     'iframe',
     'canvas',
     'form',
@@ -132,9 +136,10 @@ function convertHtmlPageToMarkdown(): HtmlConvertedMarkdown | null {
   };
 }
 
-// Run immediately when injected and expose the result on window.
-// Returns null for non-HTML pages so the viewer falls back to raw textContent.
-const result = convertHtmlPageToMarkdown();
-if (result) {
-  window.__mvHtmlConvertedMarkdown = result;
+  // Run immediately when injected and expose the result on window.
+  // Returns null for non-HTML pages so the viewer falls back to raw textContent.
+  const result = convertHtmlPageToMarkdown();
+  if (result) {
+    window.__mvHtmlConvertedMarkdown = result;
+  }
 }

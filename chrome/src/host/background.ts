@@ -708,8 +708,15 @@ chrome.runtime.onMessage.addListener((message: BackgroundMessage, sender, sendRe
   // New service envelope: dynamic content script injection (preferred)
   if (isRequestEnvelope(message) && message.type === 'INJECT_CONTENT_SCRIPT') {
     const injectionUrl = (message.payload as { url?: string })?.url;
-    handleContentScriptInjection(sender.tab?.id || 0, injectionUrl)
+    handleContentScriptInjection(sender.tab?.id || 0, !!injectionUrl)
       .then(() => {
+        const tabId = sender.tab?.id;
+        if (tabId) {
+          injectedTabs.add(tabId);
+          if (sender.tab?.active) {
+            updateContextMenu(tabId);
+          }
+        }
         sendResponseEnvelope(message.id, sendResponse, { ok: true, data: { success: true } });
       })
       .catch((error) => {
@@ -1096,6 +1103,9 @@ function abortUploadSession(token: string | undefined): void {
   }
 }
 
+// Track tabs that have the viewer injected
+const injectedTabs = new Set<number>();
+
 // Listen for settings changes to update cache manager
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName === 'local' && changes.markdownViewerSettings) {
@@ -1113,13 +1123,19 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     
     // Update context menu when locale changes
     if (newSettings && 'preferredLocale' in newSettings) {
-      updateContextMenu();
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        const activeTabId = tabs[0]?.id;
+        updateContextMenu(activeTabId);
+      });
     }
   }
 });
 
 // Get localized menu title based on user settings
-async function getMenuTitle(): Promise<string> {
+async function getMenuTitle(isRaw = false): Promise<string> {
+  const key = isRaw ? 'contextMenu_viewAsRaw' : 'contextMenu_viewAsMarkdown';
+  const defaultText = isRaw ? 'View as Raw' : 'View as Markdown';
+
   try {
     const result = await chrome.storage.local.get(['markdownViewerSettings']);
     const settings = result?.markdownViewerSettings as { preferredLocale?: string } | undefined;
@@ -1131,7 +1147,7 @@ async function getMenuTitle(): Promise<string> {
         const localeUrl = chrome.runtime.getURL(`_locales/${preferredLocale}/messages.json`);
         const response = await fetch(localeUrl);
         const messages = await response.json();
-        const message = messages['contextMenu_viewAsMarkdown']?.message;
+        const message = messages[key]?.message;
         if (message) {
           return message;
         }
@@ -1145,7 +1161,7 @@ async function getMenuTitle(): Promise<string> {
   }
   
   // Default to browser locale
-  return chrome.i18n.getMessage('contextMenu_viewAsMarkdown') || 'View as Markdown';
+  return chrome.i18n.getMessage(key) || defaultText;
 }
 
 // Initialize context menu for viewing any file as markdown
@@ -1171,9 +1187,10 @@ async function initializeContextMenu(): Promise<void> {
 }
 
 // Update context menu when settings change
-async function updateContextMenu(): Promise<void> {
+async function updateContextMenu(tabId?: number): Promise<void> {
   try {
-    const title = await getMenuTitle();
+    const isRaw = tabId !== undefined ? injectedTabs.has(tabId) : false;
+    const title = await getMenuTitle(isRaw);
     await chrome.contextMenus.update('view-as-markdown', { title });
   } catch (error) {
     // Menu might not exist yet, ignore
@@ -1183,9 +1200,28 @@ async function updateContextMenu(): Promise<void> {
   }
 }
 
+chrome.tabs.onActivated.addListener(({ tabId }) => {
+  updateContextMenu(tabId);
+});
+
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status === 'loading') {
+    // If the tab is reloading/navigating, clear the injection state
+    injectedTabs.delete(tabId);
+    if (tab.active) {
+      updateContextMenu(tabId);
+    }
+  }
+});
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+  injectedTabs.delete(tabId);
+});
+
 // Handle context menu clicks
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (info.menuItemId === 'view-as-markdown' && tab?.id) {
+    const tabId = tab.id;
     let targetUrl = '';
     
     // Get the URL to preview
@@ -1199,13 +1235,37 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
       const isCurrentPage = targetUrl === tab.url;
       
       if (isCurrentPage) {
-        // Current page - always run html-to-markdown converter first
-        handleContentScriptInjection(tab.id, true).catch((error) => {
-          console.error('Failed to inject content script:', error);
-        });
+        if (injectedTabs.has(tabId)) {
+          // Restore original view using message passing to content script first,
+          // then reload if it fails (as fallback).
+          chrome.tabs.sendMessage(tabId, { type: 'RESTORE_ORIGINAL_VIEW' }).then(() => {
+            injectedTabs.delete(tabId);
+            updateContextMenu(tabId);
+          }).catch((error) => {
+            console.error('Failed to restore original view:', error);
+            // Fallback: reload page
+            injectedTabs.delete(tabId);
+            chrome.tabs.reload(tabId);
+          });
+        } else {
+          // Current page - always run html-to-markdown converter first
+          chrome.scripting.executeScript({
+            target: { tabId },
+            func: () => {
+              try { sessionStorage.removeItem('markdownViewerRawOverride'); } catch (e) {}
+            }
+          }).finally(() => {
+            handleContentScriptInjection(tabId, true).then(() => {
+              injectedTabs.add(tabId);
+              updateContextMenu(tabId);
+            }).catch((error) => {
+              console.error('Failed to inject content script:', error);
+            });
+          });
+        }
       } else {
         // Navigate current tab to the target URL
-        chrome.tabs.update(tab.id, { url: targetUrl });
+        chrome.tabs.update(tabId, { url: targetUrl });
       }
     }
   }
