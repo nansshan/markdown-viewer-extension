@@ -7,7 +7,6 @@ import Localization from '../../../src/utils/localization';
 import themeManager from '../../../src/utils/theme-manager';
 import { loadAndApplyTheme } from '../../../src/utils/theme-to-css';
 import { initSlidevViewer } from '../../../src/slidev/slidev-viewer';
-import { isLikelySlidevMarkdown } from '../../../src/slidev/slidev-core';
 import type { AsyncTaskManager } from '../../../src/core/markdown-processor';
 import type { ScrollSyncController } from '../../../src/core/line-based-scroll';
 import type { PlatformBridgeAPI } from '../../../src/types/index';
@@ -274,9 +273,7 @@ async function handleLoadMarkdown(payload: LoadMarkdownPayload): Promise<void> {
   // ── Slidev mode: .slides.md files render as presentations ────────────
   const lowerFilename = newFilename.toLowerCase();
   const isSlidevByExtension = lowerFilename.endsWith('.slides.md');
-  const isMarkdownLikeFile = lowerFilename.endsWith('.md') || lowerFilename.endsWith('.markdown');
-  const isSlidevByContent = !isSlidevByExtension && isMarkdownLikeFile && isLikelySlidevMarkdown(content);
-  if (isSlidevByExtension || isSlidevByContent) {
+  if (isSlidevByExtension) {
     isSlidevMode = true;
 
     // Hide normal markdown wrapper, use body as container

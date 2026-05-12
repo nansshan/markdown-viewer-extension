@@ -17,7 +17,6 @@ import Localization from '../../../src/utils/localization';
 import themeManager from '../../../src/utils/theme-manager';
 import { loadAndApplyTheme } from '../../../src/utils/theme-to-css';
 import { initSlidevViewer } from '../../../src/slidev/slidev-viewer';
-import { isLikelySlidevMarkdown } from '../../../src/slidev/slidev-core';
 
 // Shared utilities from viewer-host
 import {
@@ -245,9 +244,7 @@ async function handleUpdateContent(payload: UpdateContentPayload): Promise<void>
   // ── Slidev mode: .slides.md files render as presentations ────────────
   const lowerFilename = newFilename.toLowerCase();
   const isSlidevByExtension = lowerFilename.endsWith('.slides.md');
-  const isMarkdownLikeFile = lowerFilename.endsWith('.md') || lowerFilename.endsWith('.markdown');
-  const isSlidevByContent = !isSlidevByExtension && isMarkdownLikeFile && isLikelySlidevMarkdown(content);
-  if (isSlidevByExtension || isSlidevByContent) {
+  if (isSlidevByExtension) {
     isSlidevMode = true;
     tocPanel?.setHeadings([]);
 

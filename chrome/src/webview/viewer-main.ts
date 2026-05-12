@@ -12,7 +12,6 @@ import { loadAndApplyTheme } from '../../../src/utils/theme-to-css';
 import { wrapFileContent } from '../../../src/utils/file-wrapper';
 import { buildCodeReadingRender, applyCodeViewPresentation, toFencedCode } from '../../../src/utils/code-preview';
 import { initSlidevViewer } from '../../../src/slidev/slidev-viewer';
-import { isLikelySlidevMarkdown } from '../../../src/slidev/slidev-core';
 import { getWebExtensionApi } from '../../../src/utils/platform-info';
 
 import type { PluginRenderer, RendererThemeConfig, PlatformAPI } from '../../../src/types/index';
@@ -570,9 +569,7 @@ export async function initializeViewerMain(options: ViewerMainOptions): Promise<
   // ── Slidev mode: .slides.md files render as presentations ────────────
   const initialUrl = getActiveDocumentUrl();
   const isSlidevByExtension = /\.slides\.md$/i.test(initialUrl);
-  const isMarkdownLikeSource = /\.(md|markdown)$/i.test(initialUrl);
-  const isSlidevByContent = !isSlidevByExtension && isMarkdownLikeSource && isLikelySlidevMarkdown(rawContent);
-  if (isSlidevByExtension || isSlidevByContent) {
+  if (isSlidevByExtension) {
     // Remove preload style that hides page content (opacity: 0 !important)
     document.getElementById('markdown-viewer-preload')?.remove();
 
