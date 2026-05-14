@@ -170,6 +170,155 @@ describe('markdown-block-splitter', () => {
       assert.deepStrictEqual(result, ['<div>\nHello\n</div>\n']);
     });
 
+    it('should keep contiguous html tags in a single block', () => {
+      const markdown = [
+        '<style>',
+        '.kb-wireframe {',
+        '  color: #333;',
+        '  background: linear-gradient(',
+        '    180deg,',
+        '    #fff,',
+        '    #eee',
+        '  );',
+        '}',
+        '</style>',
+        '<div class="kb-wireframe">',
+        '  <div>Hello</div>',
+        '</div>',
+      ].join('\n');
+
+      const result = splitMarkdownIntoBlocksWithLines(markdown);
+
+      assert.deepStrictEqual(result, [
+        {
+          content: [
+            '<style>',
+            '.kb-wireframe {',
+            '  color: #333;',
+            '  background: linear-gradient(',
+            '    180deg,',
+            '    #fff,',
+            '    #eee',
+            '  );',
+            '}',
+            '</style>',
+            '<div class="kb-wireframe">',
+            '  <div>Hello</div>',
+            '</div>'
+          ].join('\n'),
+          startLine: 0,
+        }
+      ]);
+    });
+
+    it('should stop html block at a blank line before following markdown', () => {
+      const markdown = [
+        '<style>',
+        '.kb-wireframe { color: #333; }',
+        '</style>',
+        '',
+        'Paragraph after a blank line.'
+      ].join('\n');
+
+      const result = splitMarkdownIntoBlocksWithLines(markdown);
+
+      assert.deepStrictEqual(result, [
+        {
+          content: [
+            '<style>',
+            '.kb-wireframe { color: #333; }',
+            '</style>',
+            ''
+          ].join('\n'),
+          startLine: 0,
+        },
+        {
+          content: 'Paragraph after a blank line.',
+          startLine: 4,
+        }
+      ]);
+    });
+
+    it('should stop html block at a blank line before following html block', () => {
+      const markdown = [
+        '<style>',
+        '.kb-wireframe { color: #333; }',
+        '</style>',
+        '',
+        '<div>Hello</div>'
+      ].join('\n');
+
+      const result = splitMarkdownIntoBlocksWithLines(markdown);
+
+      assert.deepStrictEqual(result, [
+        {
+          content: [
+            '<style>',
+            '.kb-wireframe { color: #333; }',
+            '</style>',
+            ''
+          ].join('\n'),
+          startLine: 0,
+        },
+        {
+          content: '<div>Hello</div>',
+          startLine: 4,
+        }
+      ]);
+    });
+
+    it('should not absorb non-html markdown lines into a contiguous html block', () => {
+      const markdown = [
+        '<style>',
+        '.kb-wireframe { color: #333; }',
+        '</style>',
+        'Plain markdown text without a blank line first.'
+      ].join('\n');
+
+      const result = splitMarkdownIntoBlocksWithLines(markdown);
+
+      assert.deepStrictEqual(result, [
+        {
+          content: [
+            '<style>',
+            '.kb-wireframe { color: #333; }',
+            '</style>'
+          ].join('\n'),
+          startLine: 0,
+        },
+        {
+          content: 'Plain markdown text without a blank line first.',
+          startLine: 3,
+        }
+      ]);
+    });
+
+    it('should not absorb a heading immediately after html closes', () => {
+      const markdown = [
+        '<style>',
+        '.kb-wireframe { color: #333; }',
+        '</style>',
+        '## Heading'
+      ].join('\n');
+
+      const result = splitMarkdownIntoBlocksWithLines(markdown);
+
+      assert.deepStrictEqual(result, [
+        {
+          content: [
+            '<style>',
+            '.kb-wireframe { color: #333; }',
+            '</style>'
+          ].join('\n'),
+          startLine: 0,
+        },
+        {
+          content: '## Heading',
+          startLine: 3,
+        }
+      ]);
+    });
+
     it('should handle html comment', () => {
       const result = splitMarkdownIntoBlocks('<!-- comment -->\n');
       assert.deepStrictEqual(result, ['<!-- comment -->\n']);

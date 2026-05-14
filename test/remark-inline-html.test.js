@@ -167,6 +167,40 @@ describe('remarkInlineHtml', () => {
       assert.ok(htmlNode, 'Block HTML should be preserved as html node');
       assert.strictEqual(htmlNode.value, '<div>Block content</div>');
     });
+
+    it('should merge contiguous root html nodes without a blank line', () => {
+      const input = [
+        '<style>',
+        '.kb-wireframe { color: #333; }',
+        '</style>',
+        '<div class="kb-wireframe">',
+        '  <div>Hello</div>',
+        '</div>'
+      ].join('\n');
+
+      const ast = parseToAst(input);
+      assert.strictEqual(ast.children.length, 1);
+      assert.strictEqual(ast.children[0].type, 'html');
+      assert.strictEqual(ast.children[0].value, input);
+    });
+
+    it('should not merge root html nodes separated by a blank line', () => {
+      const input = [
+        '<style>',
+        '.kb-wireframe { color: #333; }',
+        '</style>',
+        '',
+        '<div class="kb-wireframe">',
+        '  <div>Hello</div>',
+        '</div>'
+      ].join('\n');
+
+      const ast = parseToAst(input);
+      const htmlNodes = ast.children.filter(n => n.type === 'html');
+      assert.strictEqual(htmlNodes.length, 2);
+      assert.strictEqual(htmlNodes[0].value, '<style>\n.kb-wireframe { color: #333; }\n</style>');
+      assert.strictEqual(htmlNodes[1].value, '<div class="kb-wireframe">\n  <div>Hello</div>\n</div>');
+    });
   });
 
   describe('mixed content', () => {

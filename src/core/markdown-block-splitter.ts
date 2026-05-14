@@ -72,17 +72,91 @@ const frontMatterDetector: BlockDetector = {
   }
 };
 
-// HTML block: starts with block-level tag, ends with empty line
+// HTML block: starts with a recognized raw/block HTML tag, ends with empty line
+const HTML_CONTAINER_TAGS = /^<(script|style|pre)(\s|>|\/|$)/i;
 const HTML_BLOCK_TAGS = /^<(address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|h1|h2|h3|h4|h5|h6|head|header|hr|html|iframe|legend|li|link|main|menu|menuitem|nav|noframes|ol|optgroup|option|p|param|pre|section|source|summary|table|tbody|td|tfoot|th|thead|title|tr|track|ul)(\s|>|\/|$)/i;
 const HTML_RAW_START = /^<(!--|!DOCTYPE|\?|!\[CDATA\[)/i;
+
+function getHtmlContainerTagName(line: string): string | null {
+  const match = line.trim().match(HTML_CONTAINER_TAGS);
+  return match ? match[1].toLowerCase() : null;
+}
+
+function isHtmlBlockStart(line: string): boolean {
+  const trimmed = line.trim();
+  return HTML_CONTAINER_TAGS.test(trimmed) || HTML_BLOCK_TAGS.test(trimmed) || HTML_RAW_START.test(trimmed);
+}
+
+function findContiguousHtmlEnd(lines: string[], startIndex: number): number {
+  let endIndex = startIndex;
+
+  while (endIndex + 1 < lines.length && isHtmlBlockStart(lines[endIndex + 1])) {
+    const nextStart = endIndex + 1;
+    const nextContainerTag = getHtmlContainerTagName(lines[nextStart]);
+
+    if (nextContainerTag) {
+      const closingTagRegex = new RegExp(`</${nextContainerTag}>`, 'i');
+      let nextEnd = nextStart;
+      for (; nextEnd < lines.length; nextEnd++) {
+        if (closingTagRegex.test(lines[nextEnd])) {
+          break;
+        }
+      }
+      endIndex = nextEnd < lines.length ? nextEnd : lines.length - 1;
+      continue;
+    }
+
+    for (let nextEnd = nextStart + 1; nextEnd < lines.length; nextEnd++) {
+      if (lines[nextEnd].trim() === '') {
+        endIndex = nextEnd;
+        return endIndex;
+      }
+      if (isHtmlBlockStart(lines[nextEnd])) {
+        endIndex = nextEnd - 1;
+        break;
+      }
+      if (nextEnd === lines.length - 1) {
+        endIndex = nextEnd;
+      }
+    }
+
+    if (endIndex < nextStart) {
+      endIndex = nextStart;
+    }
+
+    if (endIndex === nextStart) {
+      continue;
+    }
+  }
+
+  return endIndex;
+}
 
 const htmlBlockDetector: BlockDetector = {
   name: 'html',
   isStart: (lines, index) => {
-    const trimmed = lines[index].trim();
-    return HTML_BLOCK_TAGS.test(trimmed) || HTML_RAW_START.test(trimmed);
+    return isHtmlBlockStart(lines[index]);
   },
   findEnd: (lines, startIndex) => {
+    const containerTag = getHtmlContainerTagName(lines[startIndex]);
+    if (containerTag) {
+      const closingTagRegex = new RegExp(`</${containerTag}>`, 'i');
+      let endIndex = startIndex;
+      for (; endIndex < lines.length; endIndex++) {
+        if (closingTagRegex.test(lines[endIndex])) {
+          break;
+        }
+      }
+      if (endIndex >= lines.length) {
+        endIndex = lines.length - 1;
+      }
+      endIndex = findContiguousHtmlEnd(lines, endIndex);
+      if (endIndex + 1 < lines.length && lines[endIndex + 1].trim() === '') {
+        return endIndex + 1;
+      }
+      return endIndex;
+    }
+
     // HTML block ends at empty line or EOF
     for (let i = startIndex + 1; i < lines.length; i++) {
       if (lines[i].trim() === '') {

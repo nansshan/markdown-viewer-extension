@@ -12,6 +12,54 @@
 import { visit } from 'unist-util-visit';
 import type { Root, Parent, Html, PhrasingContent, Text } from 'mdast';
 
+function mergeContiguousRootHtmlNodes(tree: Root): void {
+  const mergedChildren = [] as Root['children'];
+
+  for (const child of tree.children) {
+    const previous = mergedChildren[mergedChildren.length - 1];
+    if (
+      previous?.type === 'html' &&
+      child.type === 'html' &&
+      shouldMergeRootHtmlNodes(previous as Html, child as Html)
+    ) {
+      const previousHtml = previous as Html;
+      const nextHtml = child as Html;
+      const separator = getRootHtmlMergeSeparator(previousHtml, nextHtml);
+      previousHtml.value = `${previousHtml.value}${separator}${nextHtml.value}`;
+      if (previousHtml.position && nextHtml.position?.end) {
+        previousHtml.position.end = nextHtml.position.end;
+      }
+      continue;
+    }
+
+    mergedChildren.push(child);
+  }
+
+  tree.children = mergedChildren;
+}
+
+function shouldMergeRootHtmlNodes(previous: Html, next: Html): boolean {
+  const previousEndLine = previous.position?.end?.line;
+  const nextStartLine = next.position?.start?.line;
+
+  if (!previousEndLine || !nextStartLine) {
+    return false;
+  }
+
+  return nextStartLine <= previousEndLine + 1;
+}
+
+function getRootHtmlMergeSeparator(previous: Html, next: Html): string {
+  const previousEndLine = previous.position?.end?.line;
+  const nextStartLine = next.position?.start?.line;
+
+  if (!previousEndLine || !nextStartLine || nextStartLine <= previousEndLine) {
+    return '';
+  }
+
+  return '\n'.repeat(nextStartLine - previousEndLine);
+}
+
 // Supported HTML tags and their MDAST equivalents
 const TAG_TO_NODE_TYPE: Record<string, string> = {
   'b': 'strong',
@@ -318,6 +366,8 @@ export default function remarkInlineHtml() {
 
       nodeWithChildren.children = newChildren;
     });
+
+    mergeContiguousRootHtmlNodes(tree);
   };
 }
 
