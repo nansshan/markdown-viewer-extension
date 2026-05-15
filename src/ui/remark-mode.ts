@@ -436,9 +436,11 @@ export function createRemarkMode(options: RemarkModeOptions): RemarkModeControll
     popupEl.style.left = `${left}px`;
 
     // Wire color buttons — change existing annotation's color
+    let interacted = false;
     const colorBtns = popupEl.querySelectorAll<HTMLButtonElement>('.remark-color-btn');
     colorBtns.forEach(btn => {
       btn.addEventListener('click', () => {
+        interacted = true;
         colorBtns.forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         ann.color = btn.dataset.color as RemarkColor;
@@ -477,11 +479,20 @@ export function createRemarkMode(options: RemarkModeOptions): RemarkModeControll
     setTimeout(() => noteInput?.focus(), 50);
 
 
-    // Click outside → save note and close (annotation persists)
+    // Click outside → cancel (remove annotation) if user never interacted; otherwise save
     const outsideHandler = (e: MouseEvent) => {
       if (popupEl && !popupEl.contains(e.target as Node)) {
-        if (noteInput) {
-          ann.note = noteInput.value.trim();
+        const note = noteInput?.value.trim() ?? '';
+        if (!interacted && note === '') {
+          // No interaction — silently discard the annotation
+          annotations = annotations.filter(a => a.id !== annId);
+          renderHighlights();
+          renderSidebarContent();
+          notifyCount();
+          void saveAnnotations();
+          window.getSelection()?.removeAllRanges();
+        } else if (noteInput) {
+          ann.note = note;
           renderSidebarContent();
           void saveAnnotations();
         }
@@ -660,31 +671,55 @@ export function createRemarkMode(options: RemarkModeOptions): RemarkModeControll
       }
     });
 
-    // Wire clear-all button (two-click confirmation)
+    // Wire clear-all button — immediate clear with 5s undo (consistent with single-item delete)
     const clearBtn = el.querySelector<HTMLButtonElement>('.remark-sidebar-clear');
     if (clearBtn) {
-      let confirmPending = false;
       clearBtn.addEventListener('click', () => {
         if (annotations.length === 0) return;
-        if (!confirmPending) {
-          confirmPending = true;
-          clearBtn.textContent = '⚠️';
-          clearBtn.title = t('remark_confirm_clear', 'Click again to confirm');
-          clearBtn.classList.add('remark-confirm');
-          setTimeout(() => {
-            confirmPending = false;
-            clearBtn.textContent = '🗑️';
-            clearBtn.title = t('remark_clear_all', 'Clear all remarks');
-            clearBtn.classList.remove('remark-confirm');
-          }, 3000);
-          return;
-        }
-        confirmPending = false;
+        const UNDO_SECONDS = 5;
+        const savedAnnotations = [...annotations];
         annotations = [];
         renderHighlights();
         renderSidebarContent();
         notifyCount();
         void saveAnnotations();
+
+        const list = el.querySelector<HTMLElement>('.remark-sidebar-list');
+        if (!list) return;
+        let remaining = UNDO_SECONDS;
+        const undo = document.createElement('div');
+        undo.className = 'remark-undo-row';
+        undo.setAttribute('role', 'status');
+        undo.setAttribute('aria-live', 'polite');
+        undo.innerHTML = `<span>${t('remark_all_cleared', 'All cleared')}</span><div class="remark-undo-actions"><span class="remark-undo-countdown">${remaining}s</span><button class="remark-undo-btn">↩ ${t('remark_undo', 'Undo')}</button></div><div class="remark-undo-progress" style="animation-duration:${UNDO_SECONDS}s"></div>`;
+        list.prepend(undo);
+
+        const countdownEl = undo.querySelector<HTMLElement>('.remark-undo-countdown')!;
+        let committed = false;
+        const tick = setInterval(() => {
+          remaining--;
+          if (remaining > 0) countdownEl.textContent = `${remaining}s`;
+          else clearInterval(tick);
+        }, 1000);
+        const commit = (): void => {
+          if (committed) return;
+          committed = true;
+          clearInterval(tick);
+          undo.remove();
+        };
+        undo.querySelector('.remark-undo-btn')?.addEventListener('click', () => {
+          if (committed) return;
+          committed = true;
+          clearInterval(tick);
+          clearTimeout(timer);
+          undo.remove();
+          annotations = savedAnnotations;
+          renderHighlights();
+          renderSidebarContent();
+          notifyCount();
+          void saveAnnotations();
+        });
+        const timer = setTimeout(commit, UNDO_SECONDS * 1000);
       });
     }
 

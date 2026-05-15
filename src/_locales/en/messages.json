@@ -391,6 +391,10 @@
     "message": "Cancel & remove",
     "description": "Cancel button in the annotation popup"
   },
+  "remark_all_cleared": {
+    "message": "All cleared",
+    "description": "Undo toast label shown after clearing all remarks"
+  },
   "remark_clear_all": {
     "message": "Clear all remarks",
     "description": "Tooltip for clearing all remarks"
@@ -410,10 +414,6 @@
   "remark_color_yellow": {
     "message": "Suggestion",
     "description": "Label for the yellow annotation color"
-  },
-  "remark_confirm_clear": {
-    "message": "Click again to confirm",
-    "description": "Tooltip shown before confirming clear-all remarks"
   },
   "remark_copied": {
     "message": "Copied!",
