@@ -592,7 +592,6 @@ body.sidebar-resizing {
   overflow-x: hidden;
   overscroll-behavior: contain;
   scroll-padding-top: 12px;
-  transition: margin-left 0.2s ease, margin-right 0.2s ease;
 }
 
 #markdown-wrapper:focus {
@@ -612,6 +611,17 @@ body.toc-position-right #markdown-wrapper {
 
 body.toc-position-right.toc-hidden #markdown-wrapper {
   margin-right: 0;
+}
+
+html[data-code-view] #markdown-wrapper,
+html[data-code-view] body.remark-panel-open #markdown-wrapper,
+html[data-code-view] body.remark-panel-open.toc-position-right #markdown-wrapper {
+  transition: none;
+}
+
+html[data-code-view] #table-of-contents,
+html[data-code-view] #remark-sidebar {
+  transition: none;
 }
 
 /* Remark sidebar: mirrors #table-of-contents pattern, but on the right by default */
@@ -653,7 +663,6 @@ body.toc-position-right #remark-sidebar.remark-sidebar-closed {
 /* Remark Mode: push content to make room for the annotation panel */
 body.remark-panel-open #markdown-wrapper {
   margin-right: 280px;
-  transition: margin-right 0.2s ease;
 }
 
 /* TOC on right + remark on left: remark panel uses margin-left */

@@ -341,7 +341,7 @@ export function createToolbarManager(options: ToolbarManagerOptions): ToolbarMan
         cancelScrollRestore();
         const scrollContainer = getScrollContainer();
         if (scrollContainer) {
-          scrollContainer.scrollTo({ top: 0, behavior: 'smooth' });
+          scrollContainer.scrollTo({ top: 0, behavior: 'auto' });
         }
       });
     }

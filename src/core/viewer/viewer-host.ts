@@ -17,6 +17,7 @@
 import { createScrollSyncController, type ScrollSyncController } from '../line-based-scroll';
 import { getDocument, renderMarkdownDocument } from './viewer-controller';
 import { AsyncTaskManager } from '../markdown-processor';
+import { renderCodeViewBlock } from '../../utils/code-preview';
 import type { PluginRenderer, PlatformAPI } from '../../types/index';
 import type { FrontmatterDisplay } from './viewer-controller';
 import type { MountedViewer } from '../../integration/types';
@@ -136,6 +137,10 @@ export interface MountedViewerRenderOptions {
   forceRender?: boolean;
   targetLine?: number;
   zoomLevel?: number;
+  directCodeView?: {
+    content: string;
+    language: string;
+  };
 }
 
 export interface MountedViewerOptions {
@@ -146,6 +151,7 @@ export interface MountedViewerOptions {
   translate: TranslateFn;
   topOffset?: number;
   initialZoomLevel?: number;
+  onHeadingPresenceKnown?: (hasHeadings: boolean) => void;
   onHeadings?: (headings: Array<{ level: number; text: string; id: string }>) => void;
   onProgress?: (completed: number, total: number) => void;
   beforeProcessAll?: () => void;
@@ -179,6 +185,7 @@ export function createMountedViewer(options: MountedViewerOptions): MountedViewe
     translate,
     topOffset,
     initialZoomLevel = 1,
+    onHeadingPresenceKnown,
     onHeadings,
     onProgress,
     beforeProcessAll,
@@ -213,6 +220,20 @@ export function createMountedViewer(options: MountedViewerOptions): MountedViewe
       zoomLevel = renderOptions.zoomLevel;
     }
 
+    if (renderOptions?.directCodeView) {
+      if (currentTaskManagerRef.current) {
+        currentTaskManagerRef.current.abort();
+        currentTaskManagerRef.current = null;
+      }
+
+      renderCodeViewBlock(
+        container,
+        renderOptions.directCodeView.content,
+        renderOptions.directCodeView.language,
+      );
+      return;
+    }
+
     await renderMarkdownFlow({
       markdown,
       container,
@@ -225,6 +246,7 @@ export function createMountedViewer(options: MountedViewerOptions): MountedViewe
       platform,
       currentTaskManagerRef,
       targetLine: renderOptions?.targetLine,
+      onHeadingPresenceKnown,
       onHeadings,
       onProgress,
       beforeProcessAll,
@@ -538,6 +560,11 @@ export interface RenderMarkdownFlowOptions {
   targetLine?: number;
   
   /**
+    * Callback once before rendering starts, based on block splitting, to predict TOC presence.
+    */
+    onHeadingPresenceKnown?: (hasHeadings: boolean) => void;
+
+    /**
    * Callback when headings are extracted during render.
    * - Chrome: Update TOC progressively
    * - VSCode/Mobile: Send to host
@@ -639,6 +666,7 @@ export async function renderMarkdownFlow(options: RenderMarkdownFlowOptions): Pr
     platform,
     currentTaskManagerRef,
     targetLine,
+    onHeadingPresenceKnown,
     onHeadings,
     onProgress,
     beforeProcessAll,
@@ -726,13 +754,14 @@ export async function renderMarkdownFlow(options: RenderMarkdownFlowOptions): Pr
     }
 
     // Render markdown
-    const renderResult = await renderMarkdownDocument({
+    const { taskManager: renderedTaskManager } = await renderMarkdownDocument({
       markdown,
       container,
       renderer,
       translate,
       taskManager,
       clearContainer: false, // Already cleared above if needed
+      onHeadingPresenceKnown,
       frontmatterDisplay,
       tableMergeEmpty,
       tableLayout,
@@ -753,10 +782,6 @@ export async function renderMarkdownFlow(options: RenderMarkdownFlowOptions): Pr
         scrollController?.onStreamingComplete();
       },
     });
-
-    if (taskManager.isAborted()) {
-      return;
-    }
 
     // Platform-specific: called after streaming, before async tasks
     // Chrome uses this to update TOC active state
@@ -796,7 +821,7 @@ export async function renderMarkdownFlow(options: RenderMarkdownFlowOptions): Pr
 
     beforeProcessAll?.();
     try {
-      await renderResult.taskManager.processAll((completed, total) => {
+      await renderedTaskManager.processAll((completed, total) => {
         if (!taskManager.isAborted()) {
           onProgress?.(completed, total);
           tryScrollToTarget();

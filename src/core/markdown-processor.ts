@@ -600,6 +600,23 @@ function getMarkdownShikiPre(code: string): any | null {
   }
 }
 
+export function renderMarkdownCodeBlockHtml(code: string): string | null {
+  const shikiPre = getMarkdownShikiPre(code);
+  if (!shikiPre) {
+    return null;
+  }
+
+  try {
+    return String(
+      unified()
+        .use(rehypeStringify)
+        .stringify({ type: 'root', children: [shikiPre] } as any)
+    );
+  } catch {
+    return null;
+  }
+}
+
 function rehypeEnhanceMarkdownCode() {
   return (tree: any): void => {
     visit(tree, 'element', (node: any, _index: number | undefined, parent: any) => {

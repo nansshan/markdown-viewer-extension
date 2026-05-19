@@ -8,6 +8,10 @@ export interface BlockWithLine {
   startLine: number; // 0-based line number in source
 }
 
+export interface BlockWithContent {
+  content: string;
+}
+
 // Block type detectors
 interface BlockDetector {
   name: string;
@@ -454,4 +458,14 @@ export function splitMarkdownIntoBlocksWithLines(markdown: string): BlockWithLin
  */
 export function splitMarkdownIntoBlocks(markdown: string): string[] {
   return splitMarkdownIntoBlocksWithLines(markdown).map(b => b.content);
+}
+
+export function hasHeadingBlocks(blocks: readonly BlockWithContent[]): boolean {
+  return blocks.some((block) => {
+    const firstNonEmptyLine = block.content
+      .split('\n')
+      .find((line) => line.trim().length > 0);
+
+    return firstNonEmptyLine !== undefined && /^#{1,6}(?:\s|$)/.test(firstNonEmptyLine.trim());
+  });
 }

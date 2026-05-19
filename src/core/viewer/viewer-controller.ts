@@ -25,6 +25,7 @@ import {
   type DOMCommand,
   type BlockMeta,
 } from '../markdown-document';
+import { hasHeadingBlocks } from '../markdown-block-splitter';
 
 import GithubSlugger from 'github-slugger';
 import { rewriteObsidianLinks } from '../../utils/obsidian-link-rewrite';
@@ -77,6 +78,9 @@ export type RenderMarkdownOptions = {
 
   /** Called when headings are extracted (may be called multiple times during streaming) */
   onHeadings?: (headings: HeadingInfo[]) => void;
+
+  /** Called once before rendering starts, based on split blocks, to predict TOC presence */
+  onHeadingPresenceKnown?: (hasHeadings: boolean) => void;
 
   /** Called after each streaming chunk is committed to the DOM (may fire multiple times) */
   onChunkComplete?: () => void;
@@ -164,6 +168,7 @@ export async function renderMarkdownDocument(options: RenderMarkdownOptions): Pr
     taskManager: providedTaskManager,
     clearContainer = true,
     onHeadings,
+    onHeadingPresenceKnown,
     onChunkComplete,
     onStreamingComplete,
     frontmatterDisplay = 'hide',
@@ -188,6 +193,7 @@ export async function renderMarkdownDocument(options: RenderMarkdownOptions): Pr
   
   // Update document and get DOM commands
   const updateResult = doc.update(normalizedMarkdown);
+  onHeadingPresenceKnown?.(hasHeadingBlocks(doc.getBlocks()));
   
   // Create shared slugger for unique heading IDs across blocks
   const slugger = new GithubSlugger();

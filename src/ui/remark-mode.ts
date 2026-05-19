@@ -806,7 +806,7 @@ export function createRemarkMode(options: RemarkModeOptions): RemarkModeControll
       const container = getContainer();
       if (container) {
         const block = container.querySelector(`[data-line="${ann.startLine}"]`) as HTMLElement | null;
-        if (block) block.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        if (block) block.scrollIntoView({ behavior: 'auto', block: 'center' });
       }
 
       const targetItem = list.querySelector(`.remark-sidebar-item[data-ann-id="${id}"]`);

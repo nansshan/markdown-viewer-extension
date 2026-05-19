@@ -23,7 +23,6 @@ function injectCSS(): void {
   justify-content: center;
   background: rgba(255, 255, 255, 0.95); /* overridden at runtime to match theme */
   opacity: 0;
-  transition: opacity 150ms ease;
   cursor: default;
   touch-action: none;
 }
@@ -88,7 +87,6 @@ function injectCSS(): void {
   color: #fff;
   font-size: 18px;
   cursor: pointer;
-  transition: background 100ms;
 }
 
 .mv-lightbox-btn:hover {

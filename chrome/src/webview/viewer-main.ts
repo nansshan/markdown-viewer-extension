@@ -10,7 +10,7 @@ import Localization, { DEFAULT_SETTING_LOCALE } from '../../../src/utils/localiz
 import themeManager from '../../../src/utils/theme-manager';
 import { loadAndApplyTheme } from '../../../src/utils/theme-to-css';
 import { wrapFileContent } from '../../../src/utils/file-wrapper';
-import { buildCodeReadingRender, applyCodeViewPresentation, toFencedCode } from '../../../src/utils/code-preview';
+import { buildCodeReadingRender, applyCodeViewPresentation, renderCodeViewBlock, toFencedCode } from '../../../src/utils/code-preview';
 import { initSlidevViewer } from '../../../src/slidev/slidev-viewer';
 import { getWebExtensionApi } from '../../../src/utils/platform-info';
 
@@ -284,7 +284,6 @@ export async function initializeViewerMain(options: ViewerMainOptions): Promise<
   let markdownViewerAdapter: MountedViewerController | null = null;
   let lastScrollLine = 0;
   let currentThemeId: string | null = null;
-  let lastWrapperScrollLogTime = 0;
   const logThenPermissionError = (scope: string, error: unknown, extra?: Record<string, unknown>): void => {
     const message = error instanceof Error ? error.message : String(error);
     const isThenPermission = message.includes('Permission denied to access property "then"');
@@ -323,15 +322,18 @@ export async function initializeViewerMain(options: ViewerMainOptions): Promise<
         platform,
         renderer: pluginRenderer,
         translate,
+        onHeadingPresenceKnown: (hasHeadings) => {
+          applyPredictedTocLayout(hasHeadings);
+        },
         onHeadings: () => {
+          if (document.documentElement.dataset.codeView === '1') {
+            hideTocForCodeView();
+            return;
+          }
           void generateTOC();
         },
         afterRender: updateActiveTocItem,
         onScrollLineChange: (line) => {
-          logDebug('scrollSync.onScrollLineChange', {
-            line,
-            wrapperScrollTop: wrapper?.scrollTop ?? null,
-          });
           lastScrollLine = line;
           saveFileState({ scrollLine: line });
           element.dispatchEvent(new CustomEvent('scrolllinechange', {
@@ -343,16 +345,6 @@ export async function initializeViewerMain(options: ViewerMainOptions): Promise<
         applyTheme: loadAndApplyTheme,
         saveTheme: (id) => themeManager.saveSelectedTheme(id),
       });
-
-      if (wrapper) {
-        wrapper.addEventListener('scroll', () => {
-          const now = Date.now();
-          if (now - lastWrapperScrollLogTime < 500) {
-            return;
-          }
-          lastWrapperScrollLogTime = now;
-        }, { passive: true });
-      }
     }
 
     const target = element as unknown as Record<string, unknown>;
@@ -593,6 +585,101 @@ export async function initializeViewerMain(options: ViewerMainOptions): Promise<
     applyCodeViewPresentation((isMarkdownSourceToggleEnabled() && sourceModeEnabled) || renderState.codeView);
   };
 
+  const isCodeViewActive = (): boolean => {
+    return (isMarkdownSourceToggleEnabled() && sourceModeEnabled) || renderState.codeView;
+  };
+
+  const hideTocForCodeView = (): void => {
+    const tocDiv = document.getElementById('table-of-contents') as HTMLElement | null;
+    const overlayDiv = document.getElementById('toc-overlay') as HTMLElement | null;
+
+    if (tocDiv) {
+      tocDiv.style.display = 'none';
+      tocDiv.classList.add('hidden');
+    }
+    if (overlayDiv) {
+      overlayDiv.classList.add('hidden');
+    }
+    document.body.classList.add('toc-hidden');
+  };
+
+  const applyPredictedTocLayout = (hasHeadings: boolean): void => {
+    if (isCodeViewActive()) {
+      hideTocForCodeView();
+      return;
+    }
+
+    const tocDiv = document.getElementById('table-of-contents') as HTMLElement | null;
+    const overlayDiv = document.getElementById('toc-overlay') as HTMLElement | null;
+    if (!tocDiv) {
+      return;
+    }
+
+    if (!hasHeadings) {
+      tocDiv.style.display = 'none';
+      tocDiv.classList.add('hidden');
+      overlayDiv?.classList.add('hidden');
+      document.body.classList.add('toc-hidden');
+      return;
+    }
+
+    const shouldBeVisible = initialState.tocVisible !== undefined
+      ? initialState.tocVisible
+      : !isMobile;
+
+    tocDiv.style.display = '';
+    tocDiv.classList.toggle('hidden', !shouldBeVisible);
+    document.body.classList.toggle('toc-hidden', !shouldBeVisible);
+
+    if (overlayDiv) {
+      if (isMobile && shouldBeVisible) {
+        overlayDiv.classList.remove('hidden');
+      } else {
+        overlayDiv.classList.add('hidden');
+      }
+    }
+  };
+
+  const restoreDirectCodeViewScrollAfterRender = (line: number | undefined): void => {
+    if (line === undefined) {
+      return;
+    }
+
+    let attemptsRemaining = 6;
+    const retry = (): void => {
+      const lineElements = document.querySelectorAll<HTMLElement>('#markdown-content .mv-code-line');
+      if (lineElements.length === 0 && attemptsRemaining > 0) {
+        attemptsRemaining -= 1;
+        requestAnimationFrame(retry);
+        return;
+      }
+
+      if (lineElements.length === 0) {
+        return;
+      }
+
+      const wrapper = document.getElementById('markdown-wrapper') as HTMLElement | null;
+      const lineIndex = Math.min(lineElements.length - 1, Math.max(0, Math.floor(line)));
+      const lineProgress = Math.max(0, Math.min(0.999999, line - lineIndex));
+      const lineElement = lineElements[lineIndex];
+      const wrapperRect = wrapper?.getBoundingClientRect();
+      const lineRect = lineElement.getBoundingClientRect();
+      const lineTop = wrapper && wrapperRect
+        ? lineRect.top - wrapperRect.top + wrapper.scrollTop
+        : lineRect.top + (window.scrollY || window.pageYOffset || 0);
+      const lineHeight = Math.max(lineRect.height, 1);
+      const scrollTop = Math.max(0, lineTop + lineHeight * lineProgress);
+
+      if (wrapper) {
+        wrapper.scrollTo({ top: scrollTop, behavior: 'auto' });
+      } else {
+        window.scrollTo({ top: scrollTop, behavior: 'auto' });
+      }
+    };
+
+    requestAnimationFrame(retry);
+  };
+
   updateCodeViewPresentation();
   const rawMarkdown = renderState.markdown;
 
@@ -708,7 +795,7 @@ export async function initializeViewerMain(options: ViewerMainOptions): Promise<
   // Make body visible with a smooth fade-in
   document.body.style.opacity = '1';
   document.body.style.overflow = 'hidden';
-  document.body.style.transition = 'opacity 0.15s ease-in';
+  document.body.style.transition = 'none';
 
   // Notify the parent (workspace page) that the viewer is themed and visible,
   // so it can reveal the iframe. Harmless when this page is not embedded.
@@ -825,6 +912,38 @@ export async function initializeViewerMain(options: ViewerMainOptions): Promise<
     requestAnimationFrame(retry);
   };
 
+  const restorePreviewScrollAfterRender = (line: number | undefined): void => {
+    if (line === undefined) {
+      return;
+    }
+
+    let attemptsRemaining = 6;
+    const retry = (): void => {
+      const currentLine = markdownViewerAdapter?.getCurrentLine()
+        ?? markdownViewerElement?.getCurrentLine()
+        ?? null;
+
+      if (currentLine !== null && Math.abs(currentLine - line) < 1) {
+        return;
+      }
+
+      if (markdownViewerAdapter) {
+        markdownViewerAdapter.setScrollLine(line);
+      } else if (markdownViewerElement) {
+        markdownViewerElement.scrollLine = line;
+      }
+
+      if (attemptsRemaining <= 0) {
+        return;
+      }
+
+      attemptsRemaining -= 1;
+      requestAnimationFrame(retry);
+    };
+
+    requestAnimationFrame(retry);
+  };
+
   async function renderMarkdown(markdown: string, savedScrollLine = 0): Promise<void> {
     const restoreLine = typeof savedScrollLine === 'number' && Number.isFinite(savedScrollLine) && savedScrollLine > 0
       ? savedScrollLine
@@ -847,6 +966,23 @@ export async function initializeViewerMain(options: ViewerMainOptions): Promise<
 
     showProcessingIndicator();
     try {
+      if (isMarkdownSourceToggleEnabled() && sourceModeEnabled && markdownViewerAdapter) {
+        await markdownViewerAdapter.render(markdown, {
+          fileChanged: true,
+          forceRender: false,
+          targetLine: restoreLine,
+          zoomLevel: toolbarManager.getZoomLevel() / 100,
+          directCodeView: {
+            content: liveRawContent,
+            language: 'markdown',
+          },
+        });
+        updateCodeViewPresentation();
+        hideTocForCodeView();
+        restoreDirectCodeViewScrollAfterRender(restoreLine);
+        return;
+      }
+
       if (markdownViewerAdapter) {
         if (restoreLine !== undefined) {
           markdownViewerAdapter.setScrollLine(restoreLine);
@@ -864,8 +1000,15 @@ export async function initializeViewerMain(options: ViewerMainOptions): Promise<
         await viewer.render(markdown);
       }
       updateCodeViewPresentation();
-      await generateTOC();
-      updateActiveTocItem();
+      if (isCodeViewActive()) {
+        hideTocForCodeView();
+      } else {
+        await generateTOC();
+        updateActiveTocItem();
+
+        restorePreviewScrollAfterRender(restoreLine);
+      }
+
       restoreCodeViewScrollAfterRender(restoreLine);
     } catch (error) {
       logThenPermissionError('renderMarkdown.failed', error, {
@@ -1021,6 +1164,23 @@ export async function initializeViewerMain(options: ViewerMainOptions): Promise<
 
     showProcessingIndicator();
     try {
+      if (isMarkdownSourceToggleEnabled() && sourceModeEnabled && markdownViewerAdapter) {
+        await markdownViewerAdapter.render(displayMarkdown, {
+          fileChanged: false,
+          forceRender: false,
+          targetLine: getCurrentScrollLine(),
+          zoomLevel: toolbarManager.getZoomLevel() / 100,
+          directCodeView: {
+            content: liveRawContent,
+            language: 'markdown',
+          },
+        });
+        updateCodeViewPresentation();
+        hideTocForCodeView();
+        restoreDirectCodeViewScrollAfterRender(getCurrentScrollLine());
+        return;
+      }
+
       if (markdownViewerAdapter) {
         await markdownViewerAdapter.render(displayMarkdown, {
           fileChanged: false,

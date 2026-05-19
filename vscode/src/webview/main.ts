@@ -416,7 +416,7 @@ function scrollToHeadingById(headingId: string): void {
   const targetTop = targetRect.top - wrapperRect.top + wrapper.scrollTop;
   wrapper.scrollTo({
     top: Math.max(0, targetTop),
-    behavior: 'smooth'
+    behavior: 'auto'
   });
 }
 
@@ -617,7 +617,7 @@ function initializeUI(): void {
         const targetId = decodeURIComponent(href.slice(1));
         const targetEl = document.getElementById(targetId);
         if (targetEl) {
-          targetEl.scrollIntoView({ behavior: 'smooth' });
+          targetEl.scrollIntoView({ behavior: 'auto' });
         }
       }
       // Relative links (including .md files)
@@ -1072,7 +1072,7 @@ function scrollToHighlight(index: number): void {
     el.classList.add('current');
     
     // Scroll into view
-    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el.scrollIntoView({ behavior: 'auto', block: 'center' });
   }
 }
 

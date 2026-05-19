@@ -537,7 +537,7 @@ function scrollToHeadingById(headingId: string): void {
   const targetTop = targetRect.top - wrapperRect.top + wrapper.scrollTop;
   wrapper.scrollTo({
     top: Math.max(0, targetTop),
-    behavior: 'smooth',
+    behavior: 'auto',
   });
 }
 
@@ -665,7 +665,7 @@ function initializeUI(): void {
         obsidianBridge.postMessage('OPEN_URL', { url: href });
       } else if (href.startsWith('#')) {
         const el = document.getElementById(decodeURIComponent(href.slice(1)));
-        if (el) el.scrollIntoView({ behavior: 'smooth' });
+        if (el) el.scrollIntoView({ behavior: 'auto' });
       } else {
         const { path, fragment } = splitPathAndFragment(href);
         if (fragment !== undefined) {

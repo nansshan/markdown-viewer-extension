@@ -3,6 +3,9 @@
  * Used by both workspace mode and standalone file browsing.
  */
 
+import hljs from 'highlight.js/lib/common';
+import { renderMarkdownCodeBlockHtml } from '../core/markdown-processor';
+
 const CODE_PREVIEW_EXTENSIONS: readonly string[] = [
   '.txt', '.log', '.mdx',
   '.js', '.mjs', '.cjs', '.jsx',
@@ -117,6 +120,55 @@ export function applyCodeViewPresentation(enabled: boolean): void {
     observer.disconnect();
   });
   observer.observe(document.body, { childList: true, subtree: true });
+}
+
+export function renderCodeViewBlock(container: HTMLElement, content: string, language: string): HTMLElement {
+  const block = document.createElement('div');
+  block.className = 'md-block';
+  block.dataset.blockId = 'mv-code-view';
+  block.dataset.line = '1';
+
+  let pre: HTMLElement | null = null;
+
+  if (language === 'markdown') {
+    const markdownCodeHtml = renderMarkdownCodeBlockHtml(content);
+    if (markdownCodeHtml) {
+      const temp = document.createElement('div');
+      temp.innerHTML = markdownCodeHtml;
+      pre = temp.querySelector('pre');
+    }
+  }
+
+  if (!pre) {
+    pre = document.createElement('pre');
+    const code = document.createElement('code');
+    code.className = `hljs language-${language}`;
+
+    let highlightedHtml = '';
+    try {
+      if (language && hljs.getLanguage(language)) {
+        highlightedHtml = hljs.highlight(content, {
+          language,
+          ignoreIllegals: true,
+        }).value;
+      }
+    } catch {
+      highlightedHtml = '';
+    }
+
+    if (highlightedHtml) {
+      code.innerHTML = highlightedHtml;
+    } else {
+      code.textContent = content;
+    }
+
+    pre.appendChild(code);
+  }
+
+  block.appendChild(pre);
+
+  container.replaceChildren(block);
+  return block;
 }
 
 function decorateCodeViewLines(code: HTMLElement): void {

@@ -407,7 +407,7 @@ function setupLinkHandling(): void {
     else if (href.startsWith('#')) {
       const targetEl = document.getElementById(decodeURIComponent(href.slice(1)));
       if (targetEl) {
-        targetEl.scrollIntoView({ behavior: 'smooth' });
+        targetEl.scrollIntoView({ behavior: 'auto' });
       }
     }
     // Relative links
