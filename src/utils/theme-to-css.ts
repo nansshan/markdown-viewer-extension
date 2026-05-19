@@ -14,6 +14,8 @@ import themeManager from './theme-manager';
 import { fetchJSON } from './fetch-utils';
 import type { PlatformAPI, ColorScheme } from '../types/index';
 
+const CONTENT_ROOT_SELECTOR = ':is(#markdown-content, .markdown-viewer-content)';
+
 // ============================================================================
 // Type Definitions
 // ============================================================================
@@ -214,7 +216,7 @@ export function themeToCSS(
   // Block spacing (uses colorScheme for blockquote border)
   css.push(generateBlockSpacingCSS(layoutScheme, colorScheme));
 
-  return css.join('\n\n');
+  return css.join('\n\n').replace(/#markdown-content/g, CONTENT_ROOT_SELECTOR);
 }
 
 /**

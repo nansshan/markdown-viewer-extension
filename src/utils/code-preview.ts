@@ -102,11 +102,21 @@ export function applyCodeViewPresentation(enabled: boolean): void {
 
   document.documentElement.dataset.codeView = '1';
 
-  const applyLineNumbers = (): boolean => {
-    const code = document.querySelector('#markdown-content pre code');
-    if (!code) return false;
+  const findCodeViewTarget = (): HTMLElement | null => {
+    const block = document.querySelector<HTMLElement>('#markdown-content [data-block-id="mv-code-view"]');
+    if (!block) {
+      return null;
+    }
 
-    decorateCodeViewLines(code as HTMLElement);
+    return block.querySelector<HTMLElement>('pre code')
+      ?? block.querySelector<HTMLElement>('pre');
+  };
+
+  const applyLineNumbers = (): boolean => {
+    const codeViewTarget = findCodeViewTarget();
+    if (!codeViewTarget) return false;
+
+    decorateCodeViewLines(codeViewTarget);
     return true;
   };
 

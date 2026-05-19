@@ -10,7 +10,7 @@ import Localization, { DEFAULT_SETTING_LOCALE } from '../../../src/utils/localiz
 import themeManager from '../../../src/utils/theme-manager';
 import { loadAndApplyTheme } from '../../../src/utils/theme-to-css';
 import { wrapFileContent } from '../../../src/utils/file-wrapper';
-import { buildCodeReadingRender, applyCodeViewPresentation, renderCodeViewBlock, toFencedCode } from '../../../src/utils/code-preview';
+import { buildCodeReadingRender, applyCodeViewPresentation } from '../../../src/utils/code-preview';
 import { initSlidevViewer } from '../../../src/slidev/slidev-viewer';
 import { getWebExtensionApi } from '../../../src/utils/platform-info';
 
@@ -19,7 +19,6 @@ import type { PluginRenderer, RendererThemeConfig, PlatformAPI } from '../../../
 import { escapeHtml } from '../../../src/core/markdown-utils';
 import { getCurrentDocumentUrl, saveToHistory } from '../../../src/core/document-utils';
 import type { FileState } from '../../../src/types/core';
-import type { MarkdownViewerElement } from '../../../src/integration/types';
 import { showProcessingIndicator, hideProcessingIndicator } from './ui/progress-indicator';
 import { createTocManager } from './ui/toc-manager';
 import { createGitbookPanel } from './ui/gitbook-panel';
@@ -27,10 +26,25 @@ import { createToolbarManager, generateToolbarHTML, layoutIcons } from './ui/too
 
 // Import shared utilities from viewer-host
 import {
-  createMountedViewer,
-  type MountedViewerController,
   setCurrentFileKey,
 } from '../../../src/core/viewer/viewer-host';
+import {
+  createViewerAssembler,
+  type ViewerAssembler as ViewerAssemblerRuntime,
+} from '../../../src/core/viewer/viewer-assembler';
+import { createPersistedStateHostBridge } from '../../../src/core/viewer/viewer-host-bridge';
+import {
+  createViewerKernel,
+  type ViewerKernel,
+} from '../../../src/core/viewer/viewer-kernel';
+import { createViewerSession } from '../../../src/core/viewer/viewer-session';
+import type {
+  ViewerDocumentDescriptor,
+  ViewerPersistedState,
+  ViewerResolvedMode,
+} from '../../../src/core/viewer/viewer-session-contract';
+import { createViewerSurfacePort } from '../../../src/core/viewer/viewer-surface-port';
+import type { ViewerDisplayMode } from '../../../src/core/viewer/viewer-host-adapter';
 import { setupImageContextMenu } from '../../../src/ui/image-context-menu';
 import { setupDiagramLightbox } from '../../../src/ui/diagram-lightbox';
 import { setupCodeBlockCopy } from '../../../src/ui/code-block-copy';
@@ -92,6 +106,21 @@ export interface ViewerMainOptions {
   pluginRenderer: PluginRenderer;
   /** Optional renderer that supports theme configuration */
   themeConfigRenderer?: ThemeConfigurable;
+}
+
+export interface ViewerMainRuntime {
+  openDocument(content: string, options?: { scrollLine?: number; anchor?: string }): Promise<void>;
+  updateContent(content: string, targetLine?: number): Promise<void>;
+  setTheme(themeId: string): Promise<void>;
+  requestAnchor(anchor: string): Promise<void>;
+  setScrollLine(line: number): void;
+  getCurrentScrollLine(): number;
+}
+
+let currentViewerMainRuntime: ViewerMainRuntime | null = null;
+
+export function getViewerMainRuntime(): ViewerMainRuntime | null {
+  return currentViewerMainRuntime;
 }
 
 /**
@@ -280,8 +309,9 @@ export async function initializeViewerMain(options: ViewerMainOptions): Promise<
     return platform.fileState.get(activeUrl);
   };
 
-  let markdownViewerElement: MarkdownViewerElement | null = null;
-  let markdownViewerAdapter: MountedViewerController | null = null;
+  let mountedViewerRoot: HTMLDivElement | null = null;
+  let markdownViewerAdapter: ViewerKernel | null = null;
+  let viewerAssembler: ViewerAssemblerRuntime | null = null;
   let lastScrollLine = 0;
   let currentThemeId: string | null = null;
   const logThenPermissionError = (scope: string, error: unknown, extra?: Record<string, unknown>): void => {
@@ -304,29 +334,151 @@ export async function initializeViewerMain(options: ViewerMainOptions): Promise<
     void event;
   });
 
-  function attachMountedViewerAdapter(element: MarkdownViewerElement): void {
-    if (typeof element.render === 'function') {
-      return;
+  const getViewerSnapshot = () => viewerAssembler?.getSnapshot() ?? null;
+
+  const logViewerDebug = (scope: string, payload?: Record<string, unknown>): void => {
+    // eslint-disable-next-line no-console
+    console.debug(`[ViewerDebug] ${scope}`, {
+      embedded: window.parent !== window,
+      currentUrl: getActiveDocumentUrl(),
+      ...payload,
+    });
+  };
+
+  const mapResolvedModeToDisplayMode = (resolvedMode: ViewerResolvedMode): ViewerDisplayMode => {
+    switch (resolvedMode) {
+      case 'source':
+        return 'source';
+      case 'code-reading':
+        return 'auto-code';
+      default:
+        return 'markdown';
+    }
+  };
+
+  const getCurrentResolvedMode = (): ViewerResolvedMode => {
+    return getViewerSnapshot()?.resolvedMode ?? 'rendered';
+  };
+
+  const applyResolvedModePresentation = (resolvedMode: ViewerResolvedMode): void => {
+    markdownViewerAdapter?.setDisplayMode(mapResolvedModeToDisplayMode(resolvedMode));
+    applyCodeViewPresentation(resolvedMode !== 'rendered');
+    logViewerDebug('presentation.apply', {
+      resolvedMode,
+      displayMode: mapResolvedModeToDisplayMode(resolvedMode),
+      snapshot: getViewerSnapshot(),
+    });
+  };
+
+  const getViewerDocumentLocation = (): string => {
+    const workspaceFilePath = document.documentElement.dataset.viewerWorkspaceFilePath;
+    const viewerFilename = document.documentElement.dataset.viewerFilename;
+    return workspaceFilePath || viewerFilename || getActiveDocumentUrl();
+  };
+
+  const toViewerPersistedState = (state: FileState): ViewerPersistedState => {
+    const persistedState: ViewerPersistedState = {};
+
+    if (typeof state.scrollLine === 'number') {
+      persistedState.scrollLine = state.scrollLine;
+    }
+    if (typeof state.zoom === 'number') {
+      persistedState.zoomPercent = state.zoom;
+    }
+    if (typeof state.tocVisible === 'boolean') {
+      persistedState.tocVisible = state.tocVisible;
+    }
+    if (typeof state.layoutMode === 'string'
+      && (state.layoutMode === 'normal' || state.layoutMode === 'fullscreen' || state.layoutMode === 'narrow')) {
+      persistedState.layoutMode = state.layoutMode;
     }
 
+    return persistedState;
+  };
+
+  const fromViewerPersistedState = (state: Partial<ViewerPersistedState>): FileState => {
+    const nextState: FileState = {};
+
+    if (typeof state.scrollLine === 'number') {
+      nextState.scrollLine = state.scrollLine;
+    }
+    if (typeof state.zoomPercent === 'number') {
+      nextState.zoom = state.zoomPercent;
+    }
+    if (typeof state.tocVisible === 'boolean') {
+      nextState.tocVisible = state.tocVisible;
+    }
+    if (typeof state.layoutMode === 'string') {
+      nextState.layoutMode = state.layoutMode;
+    }
+
+    return nextState;
+  };
+
+  const getDocumentDisplayName = (): string => {
+    const location = getViewerDocumentLocation();
+    const segments = location.split(/[\\/]/).filter(Boolean);
+    return document.title || segments[segments.length - 1] || location;
+  };
+
+  const buildViewerDocumentDescriptor = (content: string): ViewerDocumentDescriptor => {
+    const documentKey = getActiveDocumentUrl();
+    const sourcePath = getViewerDocumentLocation();
+    const codeReading = !htmlConverted ? buildCodeReadingRender(content, sourcePath) : null;
+    const sourceToggleSupported = isMarkdownSourceToggleEnabled();
+
+    let format: ViewerDocumentDescriptor['format'] = 'diagram';
+    if (htmlConverted) {
+      format = 'html-converted';
+    } else if (codeReading) {
+      format = 'code';
+    } else if (sourceToggleSupported) {
+      format = 'markdown';
+    }
+
+    return {
+      documentKey,
+      displayName: getDocumentDisplayName(),
+      sourcePath,
+      format,
+      language: codeReading?.language,
+      sourceToggleSupported,
+      embedded: window.parent !== window,
+    };
+  };
+
+  const isSourceModeEnabled = (): boolean => {
+    return getCurrentResolvedMode() === 'source';
+  };
+
+  const isCodeViewActive = (): boolean => {
+    return getCurrentResolvedMode() !== 'rendered';
+  };
+
+  function getOrCreateMountedViewerAdapter(): ViewerKernel {
     if (!markdownViewerAdapter) {
-      const innerContainer = document.createElement('div');
-      innerContainer.className = 'markdown-viewer-content';
-      element.innerHTML = '';
-      element.appendChild(innerContainer);
+      const contentHost = document.getElementById('markdown-content') as HTMLDivElement | null;
+      if (!contentHost) {
+        throw new Error('[Viewer] markdown-content container not found');
+      }
+
+      contentHost.innerHTML = '';
+      mountedViewerRoot = document.createElement('div');
+      mountedViewerRoot.className = 'markdown-viewer-content';
+      contentHost.appendChild(mountedViewerRoot);
 
       const wrapper = document.getElementById('markdown-wrapper') as HTMLElement | null;
-      markdownViewerAdapter = createMountedViewer({
-        container: innerContainer,
+      markdownViewerAdapter = createViewerKernel({
+        container: mountedViewerRoot,
         scrollContainer: wrapper ?? undefined,
         platform,
         renderer: pluginRenderer,
         translate,
         onHeadingPresenceKnown: (hasHeadings) => {
-          applyPredictedTocLayout(hasHeadings);
+          void viewerAssembler?.reportHeadingPresence(hasHeadings);
         },
         onHeadings: () => {
-          if (document.documentElement.dataset.codeView === '1') {
+          if (isCodeViewActive()) {
             hideTocForCodeView();
             return;
           }
@@ -336,95 +488,21 @@ export async function initializeViewerMain(options: ViewerMainOptions): Promise<
         onScrollLineChange: (line) => {
           lastScrollLine = line;
           saveFileState({ scrollLine: line });
-          element.dispatchEvent(new CustomEvent('scrolllinechange', {
-            detail: { line },
-            bubbles: true,
-            composed: true,
-          }));
+          void viewerAssembler?.reportCurrentLine(line);
+          updateActiveTocItem();
+          logViewerDebug('scrolllinechange', {
+            line,
+            resolvedMode: getCurrentResolvedMode(),
+            snapshot: getViewerSnapshot(),
+          });
         },
         applyTheme: loadAndApplyTheme,
         saveTheme: (id) => themeManager.saveSelectedTheme(id),
       });
+      markdownViewerAdapter.setDisplayMode(mapResolvedModeToDisplayMode(getCurrentResolvedMode()));
     }
 
-    const target = element as unknown as Record<string, unknown>;
-
-    Object.defineProperty(target, 'scrollLine', {
-      configurable: true,
-      enumerable: true,
-      get: () => {
-        const attr = element.getAttribute('scroll-line');
-        if (!attr) return undefined;
-        const line = Number.parseInt(attr, 10);
-        return Number.isFinite(line) ? line : undefined;
-      },
-      set: (value: unknown) => {
-        if (typeof value === 'number' && Number.isFinite(value)) {
-          element.setAttribute('scroll-line', String(value));
-          markdownViewerAdapter?.setScrollLine(value);
-        } else {
-          element.removeAttribute('scroll-line');
-        }
-      },
-    });
-
-    target.render = async (markdown: string) => {
-      const attr = element.getAttribute('scroll-line');
-      const parsedTargetLine = attr ? Number.parseInt(attr, 10) : undefined;
-      const targetLine = typeof parsedTargetLine === 'number' && Number.isFinite(parsedTargetLine)
-        ? parsedTargetLine
-        : undefined;
-      await markdownViewerAdapter?.render(markdown, {
-        fileChanged: true,
-        forceRender: false,
-        targetLine,
-        zoomLevel: toolbarManager.getZoomLevel() / 100,
-      });
-    };
-
-    target.getCurrentLine = () => markdownViewerAdapter?.getCurrentLine() ?? null;
-    target.switchTheme = async (themeId: string) => {
-      await markdownViewerAdapter?.switchTheme(themeId);
-    };
-    target.scrollToAnchor = (anchor: string) => {
-      markdownViewerAdapter?.scrollToAnchor(anchor);
-    };
-  }
-
-  async function getOrCreateMarkdownViewerElement(): Promise<MarkdownViewerElement> {
-    if (markdownViewerElement) {
-      return markdownViewerElement;
-    }
-
-    const contentHost = document.getElementById('markdown-content');
-    if (!contentHost) {
-      throw new Error('[Viewer] markdown-content container not found');
-    }
-
-    const element = document.createElement('markdown-viewer') as MarkdownViewerElement;
-    contentHost.innerHTML = '';
-    contentHost.appendChild(element);
-
-    element.addEventListener('scrolllinechange', (event: Event) => {
-      const detail = (event as CustomEvent<{ line?: number }>).detail;
-      const line = typeof detail?.line === 'number' ? detail.line : null;
-      if (line === null || Number.isNaN(line)) {
-        return;
-      }
-      lastScrollLine = line;
-      saveFileState({ scrollLine: line });
-      updateActiveTocItem();
-    });
-
-    markdownViewerElement = element;
-
-    attachMountedViewerAdapter(markdownViewerElement);
-
-    if (typeof markdownViewerElement.render !== 'function') {
-      throw new Error('[Viewer] markdown-viewer API attachment failed');
-    }
-
-    return markdownViewerElement;
+    return markdownViewerAdapter;
   }
 
   // Set favicon to extension icon
@@ -445,7 +523,9 @@ export async function initializeViewerMain(options: ViewerMainOptions): Promise<
   setFavicon();
 
   // Initialize TOC manager
-  const tocManager = createTocManager(saveFileState, getFileState, isMobile);
+  const tocManager = createTocManager(saveFileState, getFileState, isMobile, {
+    getDesiredVisibility: () => getViewerSnapshot()?.tocVisible,
+  });
   const { generateTOC, setupTocToggle, updateActiveTocItem, setupResponsiveToc } = tocManager;
 
   // Create navigation callback for GitBook panel (will be set after renderMarkdown is defined)
@@ -560,34 +640,10 @@ export async function initializeViewerMain(options: ViewerMainOptions): Promise<
     if (htmlConverted) {
       return false;
     }
-    const activeUrl = getActiveDocumentUrl();
-    return /\.md$/i.test(activeUrl) && !/\.slides\.md$/i.test(activeUrl);
+    const activeTarget = getViewerDocumentLocation();
+    return /\.(md|markdown)$/i.test(activeTarget) && !/\.slides\.md$/i.test(activeTarget);
   };
-  let sourceModeEnabled = false;
   let liveRawContent = rawContent;
-
-  const computeRenderState = (content: string): { markdown: string; codeView: boolean } => {
-    const codeReading = !htmlConverted ? buildCodeReadingRender(content, initialUrl) : null;
-    return {
-      markdown: codeReading ? codeReading.markdown : wrapFileContent(content, initialUrl),
-      codeView: Boolean(codeReading),
-    };
-  };
-
-  let renderState = computeRenderState(liveRawContent);
-  const getDisplayMarkdown = (): string => {
-    if (isMarkdownSourceToggleEnabled() && sourceModeEnabled) {
-      return toFencedCode(liveRawContent, 'markdown');
-    }
-    return renderState.markdown;
-  };
-  const updateCodeViewPresentation = (): void => {
-    applyCodeViewPresentation((isMarkdownSourceToggleEnabled() && sourceModeEnabled) || renderState.codeView);
-  };
-
-  const isCodeViewActive = (): boolean => {
-    return (isMarkdownSourceToggleEnabled() && sourceModeEnabled) || renderState.codeView;
-  };
 
   const hideTocForCodeView = (): void => {
     const tocDiv = document.getElementById('table-of-contents') as HTMLElement | null;
@@ -603,7 +659,7 @@ export async function initializeViewerMain(options: ViewerMainOptions): Promise<
     document.body.classList.add('toc-hidden');
   };
 
-  const applyPredictedTocLayout = (hasHeadings: boolean): void => {
+  const applyPredictedTocLayout = (hasHeadings: boolean | undefined, tocVisible = initialTocVisible): void => {
     if (isCodeViewActive()) {
       hideTocForCodeView();
       return;
@@ -615,7 +671,7 @@ export async function initializeViewerMain(options: ViewerMainOptions): Promise<
       return;
     }
 
-    if (!hasHeadings) {
+    if (hasHeadings === false) {
       tocDiv.style.display = 'none';
       tocDiv.classList.add('hidden');
       overlayDiv?.classList.add('hidden');
@@ -623,9 +679,7 @@ export async function initializeViewerMain(options: ViewerMainOptions): Promise<
       return;
     }
 
-    const shouldBeVisible = initialState.tocVisible !== undefined
-      ? initialState.tocVisible
-      : !isMobile;
+    const shouldBeVisible = tocVisible;
 
     tocDiv.style.display = '';
     tocDiv.classList.toggle('hidden', !shouldBeVisible);
@@ -642,6 +696,7 @@ export async function initializeViewerMain(options: ViewerMainOptions): Promise<
 
   const restoreDirectCodeViewScrollAfterRender = (line: number | undefined): void => {
     if (line === undefined) {
+      logViewerDebug('codeview.restore.skip', { reason: 'line-undefined' });
       return;
     }
 
@@ -649,12 +704,21 @@ export async function initializeViewerMain(options: ViewerMainOptions): Promise<
     const retry = (): void => {
       const lineElements = document.querySelectorAll<HTMLElement>('#markdown-content .mv-code-line');
       if (lineElements.length === 0 && attemptsRemaining > 0) {
+        logViewerDebug('codeview.restore.retry', {
+          requestedLine: line,
+          attemptsRemaining,
+          reason: 'no-code-lines',
+        });
         attemptsRemaining -= 1;
         requestAnimationFrame(retry);
         return;
       }
 
       if (lineElements.length === 0) {
+        logViewerDebug('codeview.restore.abort', {
+          requestedLine: line,
+          reason: 'no-code-lines-after-retries',
+        });
         return;
       }
 
@@ -675,16 +739,29 @@ export async function initializeViewerMain(options: ViewerMainOptions): Promise<
       } else {
         window.scrollTo({ top: scrollTop, behavior: 'auto' });
       }
+
+      logViewerDebug('codeview.restore.apply', {
+        requestedLine: line,
+        lineIndex,
+        lineProgress,
+        renderedLineCount: lineElements.length,
+        scrollTop,
+      });
     };
 
     requestAnimationFrame(retry);
   };
 
-  updateCodeViewPresentation();
-  const rawMarkdown = renderState.markdown;
-
   // Get saved state early to prevent any flashing
   const initialState = await getFileState();
+  const initialToolbarMarkdown = (() => {
+    if (htmlConverted) {
+      return rawContent;
+    }
+    const documentLocation = getViewerDocumentLocation();
+    const codeReading = buildCodeReadingRender(rawContent, documentLocation);
+    return codeReading ? codeReading.markdown : wrapFileContent(rawContent, documentLocation);
+  })();
 
   // Layout configurations
   const layoutTitles: LayoutTitles = {
@@ -726,7 +803,7 @@ export async function initializeViewerMain(options: ViewerMainOptions): Promise<
     saveFileState,
     getFileState,
     isMobile,
-    rawMarkdown,
+    rawMarkdown: initialToolbarMarkdown,
     getRawContent: () => liveRawContent,
     docxExporter,
     cancelScrollRestore: () => {
@@ -738,15 +815,39 @@ export async function initializeViewerMain(options: ViewerMainOptions): Promise<
       // Lock scroll position before zoom change
       // No scroll lock needed in simplified scroll controller.
     },
+    onSetTocVisibility: (visible) => {
+      void viewerAssembler?.setTocVisibility(visible).catch((error) => {
+        logThenPermissionError('tocVisibility.failed', error, { visible });
+      });
+    },
     enableSourceToggle: isMarkdownSourceToggleEnabled(),
     onToggleSourceMode: () => {
-      const scrollLine = getCurrentScrollLine();
-      sourceModeEnabled = !sourceModeEnabled;
-      updateCodeViewPresentation();
-      void renderMarkdown(getDisplayMarkdown(), scrollLine);
+      void (async () => {
+        if (!viewerAssembler) {
+          return;
+        }
+        const scrollLine = getCurrentScrollLine();
+        const reportStartedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
+        logViewerDebug('toggleSource.click', {
+          scrollLine,
+          before: getViewerSnapshot(),
+        });
+        await viewerAssembler.reportCurrentLine(scrollLine);
+        const reportEndedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
+        logViewerDebug('toggleSource.reportCurrentLine.done', {
+          scrollLine,
+          durationMs: Number((reportEndedAt - reportStartedAt).toFixed(2)),
+          afterReport: getViewerSnapshot(),
+        });
+        await executeViewerCommand(
+          'toggleSource.failed',
+          () => viewerAssembler.toggleModeIntent(),
+          { scrollLine },
+        );
+      })();
     },
-    getSourceMode: () => sourceModeEnabled,
-    isSourceModeActive: () => (isMarkdownSourceToggleEnabled() && sourceModeEnabled) || renderState.codeView,
+    getSourceMode: () => isSourceModeEnabled(),
+    isSourceModeActive: () => isCodeViewActive(),
     enableRemarkMode: true,
     getRemarkContainer: () => document.getElementById('markdown-content'),
     getRemarkRawMarkdown: () => liveRawContent,
@@ -770,7 +871,101 @@ export async function initializeViewerMain(options: ViewerMainOptions): Promise<
   applyTocPanelSide(Boolean(initialSwapPanelSide));
   await initGitbookSidebarResize();
 
-  await getOrCreateMarkdownViewerElement();
+  getOrCreateMountedViewerAdapter();
+
+  const viewerHostBridge = createPersistedStateHostBridge({
+    readPersistedState: async (documentKey) => {
+      setCurrentFileKey(documentKey);
+      return toViewerPersistedState(await platform.fileState.get(documentKey));
+    },
+    writePersistedState: async (documentKey, patch) => {
+      setCurrentFileKey(documentKey);
+      saveFileState(fromViewerPersistedState(patch));
+    },
+    emit: (event, payload) => {
+      if (event === 'scroll-line-changed' && window.parent !== window) {
+        const detail = payload && typeof payload === 'object' ? payload as { line?: unknown } : null;
+        const line = typeof detail?.line === 'number' && Number.isFinite(detail.line) ? detail.line : undefined;
+        window.parent.postMessage({ type: 'VIEWER_SCROLL_LINE_CHANGED', line }, '*');
+      }
+    },
+  });
+
+  const viewerSurface = createViewerSurfacePort({
+    render: async (effect) => {
+      const viewer = getOrCreateMountedViewerAdapter();
+
+      logViewerDebug('surface.render.start', {
+        revision: effect.revision,
+        preserveViewport: effect.preserveViewport,
+        targetLine: effect.targetLine,
+        hasDirectCodeView: Boolean(effect.renderModel.directCodeView),
+        markdownLength: effect.renderModel.markdown.length,
+        snapshot: getViewerSnapshot(),
+      });
+
+      if (effect.targetLine !== undefined) {
+        lastScrollLine = effect.targetLine;
+      }
+
+      const renderOperation = effect.preserveViewport
+        ? viewer.updateContent.bind(viewer)
+        : viewer.loadDocument.bind(viewer);
+
+      await renderOperation(effect.renderModel.markdown, {
+        fileChanged: !effect.preserveViewport,
+        forceRender: false,
+        targetLine: effect.targetLine,
+        zoomLevel: toolbarManager.getZoomLevel() / 100,
+        directCodeView: effect.renderModel.directCodeView,
+      });
+
+      if (effect.renderModel.directCodeView) {
+        logViewerDebug('surface.render.directCodeView', {
+          targetLine: effect.targetLine,
+          language: effect.renderModel.directCodeView.language,
+          contentLength: effect.renderModel.directCodeView.content.length,
+        });
+        hideTocForCodeView();
+        restoreDirectCodeViewScrollAfterRender(effect.targetLine);
+        return;
+      }
+
+      logViewerDebug('surface.render.preview', {
+        targetLine: effect.targetLine,
+      });
+      await generateTOC();
+      updateActiveTocItem();
+      restorePreviewScrollAfterRender(effect.targetLine);
+    },
+    applyTheme: async (themeId) => {
+      const viewer = getOrCreateMountedViewerAdapter();
+      await viewer.switchThemePreservingScroll(themeId);
+      applyResolvedModePresentation(getCurrentResolvedMode());
+    },
+    applyPresentation: (effect) => {
+      applyResolvedModePresentation(effect.resolvedMode);
+      applyPredictedTocLayout(effect.predictedHasHeadings, effect.tocVisible);
+    },
+    readCurrentLine: () => markdownViewerAdapter?.captureCurrentLine() ?? null,
+    scrollToLine: (line) => {
+      if (isCodeViewActive()) {
+        restoreDirectCodeViewScrollAfterRender(line);
+        return;
+      }
+
+      markdownViewerAdapter?.restorePreviewScroll(line);
+    },
+    scrollToAnchor: (anchor) => {
+      markdownViewerAdapter?.scrollToAnchor(anchor);
+    },
+  });
+
+  viewerAssembler = createViewerAssembler({
+    session: createViewerSession(),
+    surface: viewerSurface,
+    host: viewerHostBridge,
+  });
 
   // Load theme BEFORE unveiling the body. Doing it the other way around
   // causes a brief flash of the default light body background (~6ms) when
@@ -825,16 +1020,7 @@ export async function initializeViewerMain(options: ViewerMainOptions): Promise<
 
     toolbarManager.initializeToolbar();
 
-    await renderMarkdown(getDisplayMarkdown(), savedScrollLine);
-
-    if (pendingAnchor) {
-      await getOrCreateMarkdownViewerElement();
-      if (markdownViewerAdapter) {
-        markdownViewerAdapter.scrollToAnchor(pendingAnchor);
-      } else {
-        markdownViewerElement!.scrollToAnchor(pendingAnchor);
-      }
-    }
+    await renderMarkdown(liveRawContent, savedScrollLine, pendingAnchor ?? undefined);
 
     await saveToHistory(platform);
     setupTocToggle();
@@ -856,11 +1042,8 @@ export async function initializeViewerMain(options: ViewerMainOptions): Promise<
     if (anchor) {
       void (async () => {
         try {
-          await getOrCreateMarkdownViewerElement();
-          if (markdownViewerAdapter) {
-            markdownViewerAdapter.scrollToAnchor(anchor);
-          } else {
-            markdownViewerElement!.scrollToAnchor(anchor);
+          if (viewerAssembler) {
+            await viewerAssembler.requestAnchor(anchor);
           }
         } catch (error) {
           logThenPermissionError('hashchange.failed', error, { anchor });
@@ -871,72 +1054,42 @@ export async function initializeViewerMain(options: ViewerMainOptions): Promise<
 
   // scrolllinechange from markdown-viewer is the single source of truth for host persistence.
   const getCurrentScrollLine = (): number => {
-    if (markdownViewerAdapter) {
-      return markdownViewerAdapter.getCurrentLine() ?? lastScrollLine;
-    }
-    if (markdownViewerElement) {
-      return markdownViewerElement.getCurrentLine() ?? lastScrollLine;
-    }
-    return lastScrollLine;
-  };
-
-  const restoreCodeViewScrollAfterRender = (line: number | undefined): void => {
-    if (line === undefined) {
-      return;
-    }
-
-    const isCodeViewActive = (isMarkdownSourceToggleEnabled() && sourceModeEnabled) || renderState.codeView;
-    if (!isCodeViewActive) {
-      return;
-    }
-
-    let attemptsRemaining = 6;
-    const retry = (): void => {
-      const hasDecoratedLines = Boolean(document.querySelector('#markdown-content .mv-code-line'));
-      if (!hasDecoratedLines && attemptsRemaining > 0) {
-        attemptsRemaining -= 1;
-        requestAnimationFrame(retry);
-        return;
-      }
-
-      if (markdownViewerAdapter) {
-        markdownViewerAdapter.setScrollLine(line);
-        return;
-      }
-
-      if (markdownViewerElement) {
-        markdownViewerElement.scrollLine = line;
-      }
-    };
-
-    requestAnimationFrame(retry);
+    return markdownViewerAdapter?.captureCurrentLine() ?? lastScrollLine;
   };
 
   const restorePreviewScrollAfterRender = (line: number | undefined): void => {
     if (line === undefined) {
+      logViewerDebug('preview.restore.skip', { reason: 'line-undefined' });
       return;
     }
 
     let attemptsRemaining = 6;
     const retry = (): void => {
-      const currentLine = markdownViewerAdapter?.getCurrentLine()
-        ?? markdownViewerElement?.getCurrentLine()
-        ?? null;
+      const currentLine = markdownViewerAdapter?.captureCurrentLine() ?? null;
 
       if (currentLine !== null && Math.abs(currentLine - line) < 1) {
+        logViewerDebug('preview.restore.done', {
+          requestedLine: line,
+          currentLine,
+        });
         return;
       }
 
-      if (markdownViewerAdapter) {
-        markdownViewerAdapter.setScrollLine(line);
-      } else if (markdownViewerElement) {
-        markdownViewerElement.scrollLine = line;
-      }
+      markdownViewerAdapter?.restorePreviewScroll(line);
 
       if (attemptsRemaining <= 0) {
+        logViewerDebug('preview.restore.abort', {
+          requestedLine: line,
+          currentLine,
+        });
         return;
       }
 
+      logViewerDebug('preview.restore.retry', {
+        requestedLine: line,
+        currentLine,
+        attemptsRemaining,
+      });
       attemptsRemaining -= 1;
       requestAnimationFrame(retry);
     };
@@ -944,18 +1097,54 @@ export async function initializeViewerMain(options: ViewerMainOptions): Promise<
     requestAnimationFrame(retry);
   };
 
-  async function renderMarkdown(markdown: string, savedScrollLine = 0): Promise<void> {
+  async function executeViewerCommand<T>(
+    scope: string,
+    run: () => Promise<T>,
+    extra?: Record<string, unknown>,
+  ): Promise<T> {
+    const startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    logViewerDebug('command.start', {
+      scope,
+      before: getViewerSnapshot(),
+      extra,
+    });
+    showProcessingIndicator();
+    try {
+      const result = await run();
+      const endedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      logViewerDebug('command.success', {
+        scope,
+        durationMs: Number((endedAt - startedAt).toFixed(2)),
+        after: getViewerSnapshot(),
+        extra,
+      });
+      return result;
+    } catch (error) {
+      const endedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      logViewerDebug('command.error', {
+        scope,
+        durationMs: Number((endedAt - startedAt).toFixed(2)),
+        after: getViewerSnapshot(),
+        extra,
+      });
+      logThenPermissionError(scope, error, extra);
+      throw error;
+    } finally {
+      hideProcessingIndicator();
+    }
+  }
+
+  async function renderMarkdown(content: string, savedScrollLine = 0, anchor?: string): Promise<void> {
     const restoreLine = typeof savedScrollLine === 'number' && Number.isFinite(savedScrollLine) && savedScrollLine > 0
       ? savedScrollLine
       : undefined;
 
-    let viewer: MarkdownViewerElement;
     try {
-      viewer = await getOrCreateMarkdownViewerElement();
+      getOrCreateMountedViewerAdapter();
     } catch (error) {
       logThenPermissionError('renderMarkdown.getOrCreate.failed', error, {
         savedScrollLine: restoreLine,
-        markdownLength: markdown.length,
+        markdownLength: content.length,
       });
       throw error;
     }
@@ -964,60 +1153,34 @@ export async function initializeViewerMain(options: ViewerMainOptions): Promise<
       lastScrollLine = restoreLine;
     }
 
-    showProcessingIndicator();
-    try {
-      if (isMarkdownSourceToggleEnabled() && sourceModeEnabled && markdownViewerAdapter) {
-        await markdownViewerAdapter.render(markdown, {
-          fileChanged: true,
-          forceRender: false,
-          targetLine: restoreLine,
-          zoomLevel: toolbarManager.getZoomLevel() / 100,
-          directCodeView: {
-            content: liveRawContent,
-            language: 'markdown',
-          },
-        });
-        updateCodeViewPresentation();
-        hideTocForCodeView();
-        restoreDirectCodeViewScrollAfterRender(restoreLine);
-        return;
-      }
+    const descriptor = buildViewerDocumentDescriptor(content);
+    const persistedState = toViewerPersistedState(await getFileState());
+    logViewerDebug('renderMarkdown.request', {
+      contentLength: content.length,
+      restoreLine,
+      anchor,
+      descriptor,
+      persistedState,
+    });
 
-      if (markdownViewerAdapter) {
-        if (restoreLine !== undefined) {
-          markdownViewerAdapter.setScrollLine(restoreLine);
-        }
-        await markdownViewerAdapter.render(markdown, {
-          fileChanged: true,
-          forceRender: false,
-          targetLine: restoreLine,
-          zoomLevel: toolbarManager.getZoomLevel() / 100,
-        });
-      } else {
-        if (restoreLine !== undefined) {
-          viewer.scrollLine = restoreLine;
-        }
-        await viewer.render(markdown);
-      }
-      updateCodeViewPresentation();
-      if (isCodeViewActive()) {
-        hideTocForCodeView();
-      } else {
-        await generateTOC();
-        updateActiveTocItem();
-
-        restorePreviewScrollAfterRender(restoreLine);
-      }
-
-      restoreCodeViewScrollAfterRender(restoreLine);
-    } catch (error) {
-      logThenPermissionError('renderMarkdown.failed', error, {
-        hasAdapter: Boolean(markdownViewerAdapter),
-      });
-      throw error;
-    } finally {
-      hideProcessingIndicator();
+    if (!viewerAssembler) {
+      throw new Error('[Viewer] viewer assembler not initialized');
     }
+
+    await executeViewerCommand(
+      'renderMarkdown.failed',
+      () => viewerAssembler.openDocument({
+        document: descriptor,
+        content,
+        persistedState,
+        targetLine: restoreLine,
+        anchor,
+      }),
+      {
+        hasAdapter: Boolean(markdownViewerAdapter),
+        resolvedMode: getCurrentResolvedMode(),
+      },
+    );
   }
 
   // Setup GitBook navigation handler (navigate without page refresh)
@@ -1049,15 +1212,12 @@ export async function initializeViewerMain(options: ViewerMainOptions): Promise<
     currentThemeId = themeId;
 
     try {
-      await getOrCreateMarkdownViewerElement();
-      if (markdownViewerAdapter) {
-        await markdownViewerAdapter.switchTheme(themeId);
-      } else {
-        await markdownViewerElement!.switchTheme(themeId);
+      if (viewerAssembler) {
+        await viewerAssembler.setTheme(themeId);
       }
 
       // Theme switch may recreate or rewrite code DOM; refresh line numbers in source/code view.
-      updateCodeViewPresentation();
+      applyResolvedModePresentation(getCurrentResolvedMode());
     } catch (error) {
       logThenPermissionError('theme.failed', error, {
         themeId,
@@ -1106,8 +1266,17 @@ export async function initializeViewerMain(options: ViewerMainOptions): Promise<
           applyTocPanelSide(Boolean(value));
         } else {
           // Other settings changed - just re-render with scroll preservation
-          const scrollLine = getCurrentScrollLine();
-          void renderMarkdown(getDisplayMarkdown(), scrollLine);
+          if (viewerAssembler) {
+            const scrollLine = getCurrentScrollLine();
+            void (async () => {
+              await viewerAssembler.reportCurrentLine(scrollLine);
+              await executeViewerCommand(
+                'settingsChange.failed',
+                () => viewerAssembler.rerender('settings-change'),
+                { scrollLine },
+              );
+            })();
+          }
         }
         return;
       }
@@ -1147,9 +1316,8 @@ export async function initializeViewerMain(options: ViewerMainOptions): Promise<
    * Handle file content change (incremental update)
    */
   async function handleFileChanged(newContent: string): Promise<void> {
-    let viewer: MarkdownViewerElement;
     try {
-      viewer = await getOrCreateMarkdownViewerElement();
+      getOrCreateMountedViewerAdapter();
     } catch (error) {
       logThenPermissionError('fileChanged.getOrCreate.failed', error, {
         contentLength: newContent.length,
@@ -1158,49 +1326,51 @@ export async function initializeViewerMain(options: ViewerMainOptions): Promise<
     }
 
     liveRawContent = newContent;
-    renderState = computeRenderState(liveRawContent);
-    const displayMarkdown = getDisplayMarkdown();
-    updateCodeViewPresentation();
 
-    showProcessingIndicator();
-    try {
-      if (isMarkdownSourceToggleEnabled() && sourceModeEnabled && markdownViewerAdapter) {
-        await markdownViewerAdapter.render(displayMarkdown, {
-          fileChanged: false,
-          forceRender: false,
-          targetLine: getCurrentScrollLine(),
-          zoomLevel: toolbarManager.getZoomLevel() / 100,
-          directCodeView: {
-            content: liveRawContent,
-            language: 'markdown',
-          },
-        });
-        updateCodeViewPresentation();
-        hideTocForCodeView();
-        restoreDirectCodeViewScrollAfterRender(getCurrentScrollLine());
+    if (!viewerAssembler) {
+      throw new Error('[Viewer] viewer assembler not initialized');
+    }
+
+    const scrollLine = getCurrentScrollLine();
+    await viewerAssembler.reportCurrentLine(scrollLine);
+    await executeViewerCommand(
+      'fileChanged.failed',
+      () => viewerAssembler.updateContent(newContent, scrollLine),
+      {
+        hasAdapter: Boolean(markdownViewerAdapter),
+        resolvedMode: getCurrentResolvedMode(),
+      },
+    );
+  }
+
+  currentViewerMainRuntime = {
+    openDocument: (content, runtimeOptions) => {
+      return renderMarkdown(content, runtimeOptions?.scrollLine ?? 0, runtimeOptions?.anchor);
+    },
+    updateContent: (content, targetLine) => handleFileChanged(content.length >= 0 ? content : '').then(async () => {
+      if (typeof targetLine === 'number' && Number.isFinite(targetLine) && viewerAssembler) {
+        await viewerAssembler.requestTargetLine(targetLine);
+      }
+    }),
+    setTheme: (themeId) => handleSetTheme(themeId),
+    requestAnchor: async (anchor) => {
+      if (!viewerAssembler) {
+        throw new Error('[Viewer] viewer assembler not initialized');
+      }
+      await viewerAssembler.requestAnchor(anchor);
+    },
+    setScrollLine: (line) => {
+      if (!Number.isFinite(line)) {
         return;
       }
-
-      if (markdownViewerAdapter) {
-        await markdownViewerAdapter.render(displayMarkdown, {
-          fileChanged: false,
-          forceRender: false,
-          zoomLevel: toolbarManager.getZoomLevel() / 100,
-        });
-      } else {
-        await viewer.render(displayMarkdown);
+      if (isCodeViewActive()) {
+        restoreDirectCodeViewScrollAfterRender(line);
+        return;
       }
-      await generateTOC();
-      updateActiveTocItem();
-    } catch (error) {
-      logThenPermissionError('fileChanged.failed', error, {
-        hasAdapter: Boolean(markdownViewerAdapter),
-      });
-      throw error;
-    } finally {
-      hideProcessingIndicator();
-    }
-  }
+      markdownViewerAdapter?.restorePreviewScroll(line);
+    },
+    getCurrentScrollLine: () => getCurrentScrollLine(),
+  };
 
   /**
    * Start file change tracking for current document
@@ -1259,7 +1429,8 @@ export async function initializeViewerMain(options: ViewerMainOptions): Promise<
   }
 
   window.addEventListener('beforeunload', () => {
-    markdownViewerElement = null;
+    currentViewerMainRuntime = null;
+    mountedViewerRoot = null;
     markdownViewerAdapter?.destroy();
     markdownViewerAdapter = null;
   });

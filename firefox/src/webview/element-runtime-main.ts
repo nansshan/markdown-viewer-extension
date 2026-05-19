@@ -26,7 +26,7 @@ function waitForResponse(target: HTMLElement, requestId: string): Promise<void> 
 
 class MarkdownViewerElementProxy extends HTMLElement {
   static get observedAttributes(): string[] {
-    return ['value', 'scroll-line'];
+    return ['value', 'scroll-line', 'mode'];
   }
 
   attributeChangedCallback(name: string, oldValue: string | null, newValue: string | null): void {
@@ -69,6 +69,19 @@ class MarkdownViewerElementProxy extends HTMLElement {
       return;
     }
     this.setAttribute('value', markdown);
+  }
+
+  get mode(): 'inline' | 'iframe' | undefined {
+    const value = this.getAttribute('mode');
+    return value === 'inline' || value === 'iframe' ? value : undefined;
+  }
+
+  set mode(mode: 'inline' | 'iframe' | undefined) {
+    if (mode === undefined) {
+      this.removeAttribute('mode');
+      return;
+    }
+    this.setAttribute('mode', mode);
   }
 
   get scrollLine(): number | undefined {

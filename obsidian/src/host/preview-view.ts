@@ -25,6 +25,7 @@ export const VIEW_TYPE = 'markdown-viewer-preview';
 export class MarkdownPreviewView extends ItemView {
   private plugin: MarkdownViewerPlugin;
   private currentFile: TFile | null = null;
+  private openedDocumentPath: string | null = null;
   private hostChannel: ServiceChannel | null = null;
   private isViewerReady = false;
   private pendingMessages: Array<{ type: string; payload?: unknown }> = [];
@@ -116,6 +117,7 @@ export class MarkdownPreviewView extends ItemView {
     this.hostChannel?.close();
     this.hostChannel = null;
     this.isViewerReady = false;
+    this.openedDocumentPath = null;
     this.pendingMessages = [];
     this.uploadSessions.clear();
   }
@@ -155,12 +157,16 @@ export class MarkdownPreviewView extends ItemView {
       documentBaseUri = placeholderUrl.replace(/\/__p__(\?.*)?$/, '');
     }
 
-    this.postToViewer('UPDATE_CONTENT', {
+    const messageType = this.openedDocumentPath === file.path ? 'UPDATE_CONTENT' : 'OPEN_DOCUMENT';
+
+    this.postToViewer(messageType, {
       content,
       filename: file.name,
       documentPath: file.path,
       documentBaseUri,
     });
+
+    this.openedDocumentPath = file.path;
   }
 
   private async preprocessMarkdownContent(content: string, file: TFile): Promise<string> {

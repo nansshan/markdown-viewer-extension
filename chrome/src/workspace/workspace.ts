@@ -8,6 +8,7 @@ import { applyI18nText } from '../../../src/ui/popup/i18n-helpers';
 import { ALL_SUPPORTED_EXTENSIONS } from '../../../src/types/formats';
 import { chevronRight, chevronDown, folderClosed, folderOpen, folderPlus, searchIcon, fileSearchIcon, textSearchIcon, getFileIcon } from './file-icons';
 import themeManager from '../../../src/utils/theme-manager';
+import { createViewerIframeHostBridge } from '../../../src/integration/iframe-viewer-host';
 
 const webExtensionApi = getWebExtensionApi();
 const VIEWER_URL = webExtensionApi.runtime.getURL('ui/workspace/viewer-embed.html');
@@ -79,6 +80,14 @@ let contentSearchInProgress = false;
 let contentSearchRunId = 0;
 const directoryReadCache = new Map<string, Promise<TreeNode[]>>();
 
+function postToPreviewFrame(message: Parameters<ReturnType<typeof createViewerIframeHostBridge>['syncDocument']>[0] | { type: string; [key: string]: unknown }): void {
+  $previewFrame.contentWindow?.postMessage(message, '*');
+}
+
+const previewFrameBridge = createViewerIframeHostBridge((message) => {
+  postToPreviewFrame(message);
+});
+
 function updateResizeHandlePosition(): void {
   const workspaceWidth = $workspace.clientWidth;
   const sidebarWidth = $sidebar.offsetWidth;
@@ -120,7 +129,56 @@ function constrainSidebarWidth(width: number): number {
 }
 
 function notifyPreviewLayoutChanged(): void {
-  $previewFrame.contentWindow?.postMessage({ type: 'WORKSPACE_LAYOUT_CHANGED' }, '*');
+  previewFrameBridge.syncHostUi({ layoutChanged: true });
+}
+
+let previewFrameReady = false;
+let previewFrameReadyPromise: Promise<void> | null = null;
+
+function resetPreviewFrameState(): void {
+  previewFrameReady = false;
+  previewFrameReadyPromise = null;
+  previewFrameBridge.reset();
+}
+
+function ensureViewerFrameReady(): Promise<void> {
+  if (previewFrameReady && $previewFrame.src === VIEWER_URL) {
+    return Promise.resolve();
+  }
+
+  if (previewFrameReadyPromise) {
+    return previewFrameReadyPromise;
+  }
+
+  $previewEmpty.style.display = 'none';
+  $previewFrame.style.visibility = '';
+  $previewFrame.style.display = 'block';
+
+  previewFrameReadyPromise = new Promise((resolve) => {
+    const onMessage = (event: MessageEvent) => {
+      if (event.source !== $previewFrame.contentWindow) return;
+      if (event.data?.type !== 'VIEWER_READY') return;
+      window.removeEventListener('message', onMessage);
+      previewFrameReady = true;
+      previewFrameReadyPromise = null;
+      resolve();
+    };
+
+    window.addEventListener('message', onMessage);
+
+    if ($previewFrame.src !== VIEWER_URL) {
+      resetPreviewFrameState();
+      $previewFrame.src = VIEWER_URL;
+      return;
+    }
+
+    previewFrameReady = true;
+    previewFrameReadyPromise = null;
+    window.removeEventListener('message', onMessage);
+    resolve();
+  });
+
+  return previewFrameReadyPromise;
 }
 
 async function getStoredSidebarWidth(): Promise<number | null> {
@@ -276,6 +334,7 @@ async function canPreviewAsText(file: File): Promise<boolean> {
 }
 
 function showBinaryFileMessage(): void {
+  resetPreviewFrameState();
   $previewFrame.src = 'about:blank';
   $previewFrame.style.display = 'none';
   $previewEmpty.style.display = '';
@@ -853,51 +912,35 @@ async function resolveFileFromRoot(path: string): Promise<File | null> {
 async function showImagePreview(_file: File, name: string, _ext: string): Promise<void> {
   // Pass a relative reference so resolveWorkspaceImages in viewer-embed
   // can resolve it via the parent's File System Access API — no base64 needed.
-  sendToViewer(`![${name}](./${name})`, name + '.md');
+  await sendToViewer(`![${name}](./${name})`, name + '.md');
 }
 
 // ─── File preview via embedded viewer ───
-function sendToViewer(content: string, filename: string, codeView = false, targetLine?: number, workspaceFilePath?: string) {
-  // Keep iframe visible so rendering updates (including TOC generation) are
-  // visible during loading instead of appearing only after full completion.
-  $previewEmpty.style.display = 'none';
-  $previewFrame.style.visibility = '';
-  $previewFrame.style.display = 'block';
-  $previewFrame.src = VIEWER_URL;
+async function sendToViewer(content: string, filename: string, codeView = false, targetLine?: number, workspaceFilePath?: string) {
+  await ensureViewerFrameReady();
 
-  const onMessage = (event: MessageEvent) => {
-    if (event.source !== $previewFrame.contentWindow) return;
-    if (event.data?.type === 'VIEWER_READY') {
-      $previewFrame.contentWindow!.postMessage({
-        type: 'RENDER_FILE',
-        content,
-        filename,
-        fileDir: currentFileDir,
-        workspaceName: rootDirHandle?.name || '',
-        workspaceFilePath: workspaceFilePath || '',
-        codeView,
-        targetLine,
-      }, '*');
-      void postThemeToViewer();
-      return;
-    }
-    if (event.data?.type === 'VIEWER_RENDERED') {
-      window.removeEventListener('message', onMessage);
-    }
-  };
-  window.addEventListener('message', onMessage);
+  const nextWorkspaceFilePath = workspaceFilePath || '';
+  previewFrameBridge.syncDocument({
+    documentKey: nextWorkspaceFilePath || filename,
+    content,
+    filename,
+    fileDir: currentFileDir,
+    workspaceName: rootDirHandle?.name || '',
+    workspaceFilePath: nextWorkspaceFilePath,
+    codeView,
+    targetLine,
+  });
+  void postHostUiToViewer();
 }
 
-async function postThemeToViewer(themeId?: string): Promise<void> {
+async function postHostUiToViewer(input: { themeId?: string } = {}): Promise<void> {
+  const { themeId } = input;
   const targetThemeId = themeId ?? await themeManager.loadSelectedTheme();
-  if (!targetThemeId || !$previewFrame.contentWindow) {
+  if (!targetThemeId) {
     return;
   }
 
-  $previewFrame.contentWindow.postMessage({
-    type: 'SET_THEME',
-    themeId: targetThemeId,
-  }, '*');
+  previewFrameBridge.syncHostUi({ themeId: targetThemeId });
 }
 
 async function openFile(fileHandle: FileSystemFileHandle, options?: { targetLine?: number }) {
@@ -918,6 +961,7 @@ async function openFile(fileHandle: FileSystemFileHandle, options?: { targetLine
   if (DIRECT_HTML_PREVIEW_EXTENSIONS.has(ext)) {
     $previewEmpty.style.display = 'none';
     $previewFrame.style.display = 'block';
+    resetPreviewFrameState();
     $previewFrame.src = URL.createObjectURL(file);
     return;
   }
@@ -951,6 +995,7 @@ async function openWorkspace(dirHandle: FileSystemDirectoryHandle) {
   currentSearchMode = 'filename';
   $previewEmpty.style.display = '';
   $previewFrame.style.display = 'none';
+  resetPreviewFrameState();
   $previewFrame.src = 'about:blank';
 
   rootDirHandle = dirHandle;
@@ -1308,7 +1353,7 @@ Localization.init().then(async () => {
       }
 
       if (typeof nextSettings?.themeId === 'string' && nextSettings.themeId !== oldSettings?.themeId) {
-        void postThemeToViewer(nextSettings.themeId);
+        void postHostUiToViewer({ themeId: nextSettings.themeId });
       }
 
       // Theme may have changed in the popup; re-sync dark class so the outer

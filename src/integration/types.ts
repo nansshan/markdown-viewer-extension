@@ -18,6 +18,7 @@ export interface MarkdownViewerElement extends HTMLElement {
   scrollLine?: number;
 
   render(markdown: string): Promise<void>;
+  switchTheme?(themeId: string): Promise<void>;
   scrollToAnchor(anchor: string): void;
   getCurrentLine(): number | null;
 }

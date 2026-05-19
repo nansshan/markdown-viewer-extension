@@ -1,17 +1,28 @@
 import { createMountedViewer, type TranslateFn } from '../core/viewer/viewer-host';
+import { createViewerAssembler } from '../core/viewer/viewer-assembler';
+import { createPersistedStateHostBridge } from '../core/viewer/viewer-host-bridge';
+import { createViewerSession } from '../core/viewer/viewer-session';
+import type {
+  ViewerDocumentDescriptor,
+  ViewerPersistedState,
+  ViewerResolvedMode,
+} from '../core/viewer/viewer-session-contract';
+import { createViewerSurfacePort } from '../core/viewer/viewer-surface-port';
 import { escapeHtml } from '../core/markdown-utils';
 import themeManager from '../utils/theme-manager';
 import { loadAndApplyTheme } from '../utils/theme-to-css';
 import { getWebExtensionApi } from '../utils/platform-info';
 import { createTocManager } from '../../chrome/src/webview/ui/toc-manager';
-import { generateToolbarHTML } from '../../chrome/src/webview/ui/toolbar';
 import type { PluginRenderer, PlatformAPI } from '../types';
+import { createViewerIframeHostBridge } from './iframe-viewer-host';
 
-const OBSERVED_ATTRIBUTES = ['value', 'scroll-line'] as const;
+const OBSERVED_ATTRIBUTES = ['value', 'scroll-line', 'mode'] as const;
 const RENDER_REQUEST_EVENT = 'mv:render-request';
 const ANCHOR_REQUEST_EVENT = 'mv:scroll-to-anchor-request';
 const RESPONSE_EVENT = 'mv:response';
 const ELEMENT_BASE_STYLE_ID = 'mdv-element-base-style';
+
+type MarkdownViewerRuntimeMode = 'inline' | 'iframe';
 
 export interface MarkdownViewerElementFactoryOptions {
   platform: PlatformAPI;
@@ -99,7 +110,8 @@ markdown-viewer {
   position: relative;
 }
 
-markdown-viewer > #markdown-content {
+markdown-viewer > #markdown-content,
+markdown-viewer > .markdown-viewer-content {
   box-sizing: border-box;
   padding: 40px;
 }
@@ -136,7 +148,8 @@ markdown-viewer #markdown-wrapper {
 }
 
 @media screen and (max-width: 768px) {
-  markdown-viewer > #markdown-content {
+  markdown-viewer > #markdown-content,
+  markdown-viewer > .markdown-viewer-content {
     padding: 20px;
   }
 
@@ -154,6 +167,17 @@ markdown-viewer #markdown-wrapper {
 
 function hasRenderableContent(markdown: string): boolean {
   return markdown.trim().length > 0;
+}
+
+function resolveRuntimeMode(target: HTMLElement): MarkdownViewerRuntimeMode {
+  const requestedMode = target.getAttribute('mode');
+  if (requestedMode === 'inline' || requestedMode === 'iframe') {
+    return requestedMode;
+  }
+
+  const existingMarkdownContent = document.getElementById('markdown-content');
+  const canUseIframeEmbed = !existingMarkdownContent || existingMarkdownContent === target;
+  return canUseIframeEmbed ? 'iframe' : 'inline';
 }
 
 export function attachMarkdownViewerElementRuntime(
@@ -194,12 +218,11 @@ export function attachMarkdownViewerElementRuntime(
   );
   generateTOC = tocManager.generateTOC;
   updateActiveTocItem = tocManager.updateActiveTocItem;
-  const existingMarkdownContent = document.getElementById('markdown-content');
-  const canUseMarkdownContentId = !existingMarkdownContent || existingMarkdownContent === target;
+  const runtimeMode = resolveRuntimeMode(target);
 
   // HTML element mode: host the full reader in an iframe, instead of rebuilding
   // toolbar/toc logic in this runtime.
-  if (canUseMarkdownContentId) {
+  if (runtimeMode === 'iframe') {
     const webExtensionApi = getWebExtensionApi();
     const frameId = target.id ? `mdv-frame-${target.id}` : 'mdv-frame';
     let frame = target.querySelector(`:scope > iframe#${CSS.escape(frameId)}`) as HTMLIFrameElement | null;
@@ -220,6 +243,9 @@ export function attachMarkdownViewerElementRuntime(
 
     let frameReady = false;
     let currentValue = target.getAttribute('value') ?? '';
+    const frameHostBridge = createViewerIframeHostBridge((message) => {
+      postToFrame(message);
+    });
 
     const setFrameVisible = (visible: boolean): void => {
       if (!frame) return;
@@ -235,31 +261,25 @@ export function attachMarkdownViewerElementRuntime(
     };
 
     const syncUi = (): void => {
-      postToFrame({
-        type: 'SET_EMBED_UI',
+      frameHostBridge.syncHostUi({
         toc: 'none',
       });
     };
 
     const enableFloatingToc = (): void => {
-      const payload: {
-        type: 'SET_EMBED_UI';
-        toc: 'floating';
-      } = {
-        type: 'SET_EMBED_UI',
+      frameHostBridge.syncHostUi({
         toc: 'floating',
-      };
-
-      postToFrame(payload);
+      });
     };
 
-    const syncRender = (): void => {
-      postToFrame({
-        type: 'RENDER_FILE',
+    const syncRender = (targetLine?: number): void => {
+      frameHostBridge.syncDocument({
+        documentKey: 'inline',
         content: currentValue,
         filename: 'inline.md',
         fileDir: '',
         codeView: false,
+        targetLine,
       });
     };
 
@@ -269,6 +289,7 @@ export function attachMarkdownViewerElementRuntime(
       const data = event.data as { type?: string };
       if (data.type === 'VIEWER_READY') {
         frameReady = true;
+        frameHostBridge.reset();
         syncUi();
         const shouldShow = hasRenderableContent(currentValue);
         if (shouldShow) {
@@ -276,15 +297,25 @@ export function attachMarkdownViewerElementRuntime(
         }
         setFrameVisible(shouldShow);
         if (shouldShow) {
-          syncRender();
+          const rawLine = target.getAttribute('scroll-line');
+          const line = rawLine ? Number.parseInt(rawLine, 10) : Number.NaN;
+          syncRender(Number.isFinite(line) ? line : undefined);
         }
         return;
       }
       if (data.type === 'VIEWER_RENDERED') {
         setFrameVisible(hasRenderableContent(currentValue));
-        // Keep contract parity with mounted viewer mode.
+        return;
+      }
+      if (data.type === 'VIEWER_SCROLL_LINE_CHANGED') {
+        const detail = data as { line?: unknown };
+        const line = typeof detail.line === 'number' && Number.isFinite(detail.line) ? detail.line : null;
+        if (line === null) {
+          return;
+        }
+        target.setAttribute('data-mv-current-line', String(line));
         target.dispatchEvent(new CustomEvent('scrolllinechange', {
-          detail: { line: 0 },
+          detail: { line },
           bubbles: true,
           composed: true,
         }));
@@ -303,11 +334,18 @@ export function attachMarkdownViewerElementRuntime(
           if (shouldShow) {
             enableFloatingToc();
           }
-          syncRender();
+          const rawLine = target.getAttribute('scroll-line');
+          const line = rawLine ? Number.parseInt(rawLine, 10) : Number.NaN;
+          syncRender(Number.isFinite(line) ? line : undefined);
           continue;
         }
         if (name === 'scroll-line') {
-          // Full reader doesn't expose direct line API in embed mode yet.
+          const rawLine = target.getAttribute('scroll-line');
+          if (!rawLine) continue;
+          const line = Number.parseInt(rawLine, 10);
+          if (Number.isFinite(line)) {
+            frameHostBridge.syncHostNavigation({ line });
+          }
           continue;
         }
       }
@@ -325,20 +363,29 @@ export function attachMarkdownViewerElementRuntime(
         if (shouldShow) {
           enableFloatingToc();
         }
-        syncRender();
+        const rawLine = target.getAttribute('scroll-line');
+        const line = rawLine ? Number.parseInt(rawLine, 10) : Number.NaN;
+        syncRender(Number.isFinite(line) ? line : undefined);
       },
       async switchTheme(themeId: string): Promise<void> {
         const resolvedThemeId = await resolveThemeId(themeId);
-        postToFrame({ type: 'SET_THEME', themeId: resolvedThemeId });
+        frameHostBridge.syncHostUi({ themeId: resolvedThemeId });
       },
       scrollToAnchor(anchor: string): void {
-        postToFrame({ type: 'SCROLL_TO_ANCHOR', anchor });
+        frameHostBridge.syncHostNavigation({ anchor });
       },
       getCurrentLine(): number | null {
         return null;
       },
       setScrollLine(): void {
-        // No-op in embed mode.
+        const rawLine = target.getAttribute('scroll-line');
+        if (!rawLine) {
+          return;
+        }
+        const line = Number.parseInt(rawLine, 10);
+        if (Number.isFinite(line)) {
+          frameHostBridge.syncHostNavigation({ line });
+        }
       },
       destroy(): void {
         window.removeEventListener('message', onFrameMessage);
@@ -347,47 +394,13 @@ export function attachMarkdownViewerElementRuntime(
     };
   }
 
-  if (canUseMarkdownContentId) {
-    const hasShell = Boolean(target.querySelector(':scope > #page-shell'));
-    if (!hasShell) {
-      target.innerHTML = generateToolbarHTML({
-        translate,
-        escapeHtml,
-        initialTocClass: '',
-        initialMaxWidth: '1360px',
-        initialZoom: 100,
-      });
-      saveElementState({ tocVisible: true, zoom: 100, layoutMode: 'normal' });
-    }
-
-    const fileName = target.querySelector('#file-name') as HTMLSpanElement | null;
-    if (fileName) {
-      fileName.textContent = 'markdown-viewer';
-    }
-
-    container = target.querySelector('#markdown-content') as HTMLDivElement | null;
-    scrollContainer = target.querySelector('#markdown-wrapper') as HTMLElement | null;
-
-    const toggleToc = tocManager.setupTocToggle();
-    void tocManager.setupResponsiveToc();
-
-    const toggleTocBtn = target.querySelector('#toggle-toc-btn') as HTMLButtonElement | null;
-    if (toggleTocBtn) {
-      toggleTocBtn.addEventListener('click', () => {
-        toggleToc();
-      });
-    }
-
-  } else {
-    if (!container) {
-      container = document.createElement('div');
-      container.className = 'markdown-viewer-content';
-      target.appendChild(container);
-    }
-    if (container.id === 'markdown-content') {
-      container.removeAttribute('id');
-    }
-
+  if (!container) {
+    container = document.createElement('div');
+    container.className = 'markdown-viewer-content';
+    target.appendChild(container);
+  }
+  if (container.id === 'markdown-content') {
+    container.removeAttribute('id');
   }
 
   if (!container) {
@@ -437,6 +450,7 @@ export function attachMarkdownViewerElementRuntime(
       });
     },
     onScrollLineChange: (line) => {
+      void viewerAssembler.reportCurrentLine(line);
       target.setAttribute('data-mv-current-line', String(line));
       target.dispatchEvent(new CustomEvent('scrolllinechange', {
         detail: { line },
@@ -449,30 +463,167 @@ export function attachMarkdownViewerElementRuntime(
     saveTheme: (themeId) => themeManager.saveSelectedTheme(themeId),
   });
 
+  const mapElementStateToPersistedState = (state: Record<string, unknown>): ViewerPersistedState => {
+    const persistedState: ViewerPersistedState = {};
+
+    if (typeof state.scrollLine === 'number') {
+      persistedState.scrollLine = state.scrollLine;
+    }
+    if (typeof state.zoom === 'number') {
+      persistedState.zoomPercent = state.zoom;
+    }
+    if (typeof state.tocVisible === 'boolean') {
+      persistedState.tocVisible = state.tocVisible;
+    }
+    if (typeof state.layoutMode === 'string'
+      && (state.layoutMode === 'normal' || state.layoutMode === 'fullscreen' || state.layoutMode === 'narrow')) {
+      persistedState.layoutMode = state.layoutMode;
+    }
+
+    return persistedState;
+  };
+
+  const mapPersistedStateToElementState = (state: Partial<ViewerPersistedState>): Record<string, unknown> => {
+    const nextState: Record<string, unknown> = {};
+
+    if (typeof state.scrollLine === 'number') {
+      nextState.scrollLine = state.scrollLine;
+    }
+    if (typeof state.zoomPercent === 'number') {
+      nextState.zoom = state.zoomPercent;
+    }
+    if (typeof state.tocVisible === 'boolean') {
+      nextState.tocVisible = state.tocVisible;
+    }
+    if (typeof state.layoutMode === 'string') {
+      nextState.layoutMode = state.layoutMode;
+    }
+
+    return nextState;
+  };
+
+  const applyResolvedModePresentation = (resolvedMode: ViewerResolvedMode, tocVisible: boolean): void => {
+    const tocDiv = target.querySelector('#table-of-contents') as HTMLElement | null;
+    const overlayDiv = target.querySelector('#toc-overlay') as HTMLElement | null;
+    const readerRoot = getMountedReaderRoot();
+
+    if (resolvedMode !== 'rendered') {
+      if (tocDiv) {
+        tocDiv.classList.add('hidden');
+        tocDiv.style.display = 'none';
+      }
+      overlayDiv?.classList.add('hidden');
+      readerRoot.classList.add('toc-hidden');
+      return;
+    }
+
+    if (tocDiv?.style.display === 'none') {
+      overlayDiv?.classList.add('hidden');
+      readerRoot.classList.add('toc-hidden');
+      return;
+    }
+
+    tocDiv?.classList.toggle('hidden', !tocVisible);
+    readerRoot.classList.toggle('toc-hidden', !tocVisible);
+    overlayDiv?.classList.add('hidden');
+  };
+
+  const viewerSurface = createViewerSurfacePort({
+    render: async (effect) => {
+      const shouldShow = hasRenderableContent(effect.renderModel.markdown);
+      setMountedReaderVisible(shouldShow);
+      await mountedViewer.render(effect.renderModel.markdown, {
+        fileChanged: !effect.preserveViewport,
+        forceRender: false,
+        targetLine: effect.targetLine,
+      });
+      await generateTOC();
+      applyUiAttributes();
+      updateActiveTocItem();
+    },
+    applyTheme: async (themeId) => {
+      const resolvedThemeId = await resolveThemeId(themeId);
+      await mountedViewer.switchTheme(resolvedThemeId);
+    },
+    applyPresentation: (effect) => {
+      applyResolvedModePresentation(effect.resolvedMode, effect.tocVisible);
+    },
+    readCurrentLine: () => mountedViewer.getCurrentLine(),
+    scrollToLine: (line) => {
+      mountedViewer.setScrollLine(line);
+    },
+    scrollToAnchor: (anchor) => {
+      mountedViewer.scrollToAnchor(anchor);
+    },
+  });
+
+  const viewerHostBridge = createPersistedStateHostBridge({
+    readPersistedState: async () => mapElementStateToPersistedState(await getElementState()),
+    writePersistedState: async (_documentKey, patch) => {
+      saveElementState(mapPersistedStateToElementState(patch));
+    },
+  });
+
+  const viewerAssembler = createViewerAssembler({
+    session: createViewerSession(),
+    surface: viewerSurface,
+    host: viewerHostBridge,
+  });
+
   let currentValue = '';
+  let hasOpenedDocument = false;
+
+  const buildElementDocumentDescriptor = (): ViewerDocumentDescriptor => ({
+    documentKey: target.id || 'markdown-viewer-element',
+    displayName: 'markdown-viewer',
+    format: 'markdown',
+    sourceToggleSupported: false,
+    embedded: true,
+  });
 
   const render = async (markdown: string): Promise<void> => {
     currentValue = markdown;
-    const shouldShow = hasRenderableContent(markdown);
-    setMountedReaderVisible(shouldShow);
-    await mountedViewer.render(markdown);
-    await generateTOC();
-    applyUiAttributes();
-    updateActiveTocItem();
+    if (!hasOpenedDocument) {
+      const persistedState = mapElementStateToPersistedState(await getElementState());
+      await viewerAssembler.openDocument({
+        document: buildElementDocumentDescriptor(),
+        content: markdown,
+        persistedState,
+        targetLine: typeof persistedState.scrollLine === 'number' ? persistedState.scrollLine : undefined,
+      });
+      hasOpenedDocument = true;
+      return;
+    }
+
+    const targetLineAttr = target.getAttribute('scroll-line');
+    const targetLine = targetLineAttr ? Number.parseInt(targetLineAttr, 10) : Number.NaN;
+    await viewerAssembler.updateContent(markdown, Number.isFinite(targetLine) ? targetLine : undefined);
   };
 
   const switchTheme = async (themeId: string): Promise<void> => {
     const resolvedThemeId = await resolveThemeId(themeId);
-    await mountedViewer.switchTheme(resolvedThemeId);
+    await viewerAssembler.setTheme(resolvedThemeId);
   };
 
   const scrollToAnchor = (anchor: string): void => {
-    mountedViewer.scrollToAnchor(anchor);
+    void viewerAssembler.requestAnchor(anchor);
   };
 
   const setScrollLine = (line: number): void => {
-    mountedViewer.setScrollLine(line);
+    void viewerAssembler.requestTargetLine(line);
   };
+
+  const toggleTocBtn = target.querySelector('#toggle-toc-btn') as HTMLButtonElement | null;
+  if (toggleTocBtn) {
+    toggleTocBtn.addEventListener('click', () => {
+      const tocDiv = target.querySelector('#table-of-contents') as HTMLElement | null;
+      if (!tocDiv || tocDiv.style.display === 'none') {
+        return;
+      }
+      const nextVisible = tocDiv.classList.contains('hidden');
+      void viewerAssembler.setTocVisibility(nextVisible);
+    });
+  }
 
   const applyCurrentAttributes = (): void => {
     const valueAttr = target.getAttribute('value');
@@ -547,7 +698,7 @@ export function attachMarkdownViewerElementRuntime(
     switchTheme,
     scrollToAnchor,
     getCurrentLine(): number | null {
-      return mountedViewer.getCurrentLine();
+      return viewerAssembler.getSnapshot().currentLine ?? mountedViewer.getCurrentLine();
     },
     setScrollLine,
     destroy(): void {
@@ -586,6 +737,12 @@ export function createMarkdownViewerElementClass(options: MarkdownViewerElementF
     attributeChangedCallback(name: string, oldValue: string | null, newValue: string | null): void {
       if (!this.runtimeController || oldValue === newValue) return;
 
+      if (name === 'mode') {
+        this.runtimeController.destroy();
+        this.runtimeController = attachMarkdownViewerElementRuntime(this, options);
+        return;
+      }
+
       if (name === 'value') {
         void this.render(newValue ?? '');
         return;
@@ -613,6 +770,19 @@ export function createMarkdownViewerElementClass(options: MarkdownViewerElementF
         return;
       }
       this.setAttribute('value', markdown);
+    }
+
+    get mode(): MarkdownViewerRuntimeMode | undefined {
+      const value = this.getAttribute('mode');
+      return value === 'inline' || value === 'iframe' ? value : undefined;
+    }
+
+    set mode(mode: MarkdownViewerRuntimeMode | undefined) {
+      if (mode === undefined) {
+        this.removeAttribute('mode');
+        return;
+      }
+      this.setAttribute('mode', mode);
     }
 
     get scrollLine(): number | undefined {

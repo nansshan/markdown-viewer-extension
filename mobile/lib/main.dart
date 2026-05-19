@@ -345,7 +345,7 @@ class _MarkdownViewerHomeState extends State<MarkdownViewerHome> {
     for (int i = 0; i < 20; i++) {
       try {
         final result = await _controller.runJavaScriptReturningResult(
-          'typeof window.loadMarkdown',
+          'typeof window.openDocument',
         );
 
         if (result.toString().contains('function')) {
@@ -1061,17 +1061,17 @@ class _MarkdownViewerHomeState extends State<MarkdownViewerHome> {
       // which may lag behind when settings page updates theme asynchronously.
       final escapedTheme = _escapeJs(settingsService.theme);
       
-      // Call loadMarkdown with object payload (filePath used by FileStateService)
+      // Use OPEN_DOCUMENT-shaped host API so mobile aligns with the newer viewer contract.
       await _controller.runJavaScript("""
-        if(window.loadMarkdown){
-          window.loadMarkdown({
+        if(window.openDocument){
+          window.openDocument({
             content: '$escaped',
             filename: '$filename',
             filePath: '$escapedFilePath',
             themeId: '$escapedTheme'
           });
         }else{
-          console.error('loadMarkdown not defined');
+          console.error('openDocument not defined');
         }
       """);
       setState(() {
@@ -1242,7 +1242,7 @@ class _MarkdownViewerHomeState extends State<MarkdownViewerHome> {
       final escapedThemeId = _escapeJs(themeId);
       
       await _controller.runJavaScript(
-        "if(window.setTheme){window.setTheme('$escapedThemeId');}else{console.error('setTheme not defined');}",
+        "if(window.syncHostUi){window.syncHostUi({themeId:'$escapedThemeId'});}else{console.error('syncHostUi not defined');}",
       );
     } catch (e) {
       debugPrint('[Mobile] Failed to send theme: $e');

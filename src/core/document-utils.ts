@@ -69,6 +69,18 @@ export function getCurrentDocumentUrl(): string {
  */
 export function getFilenameFromURL(): string {
   const url = getCurrentDocumentUrl();
+
+  const workspacePath = getWorkspaceHistoryPath(url);
+  if (workspacePath) {
+    const segments = workspacePath.split('/').filter(Boolean);
+    const workspaceFilename = segments[segments.length - 1] || workspacePath;
+    try {
+      return decodeURIComponent(workspaceFilename);
+    } catch {
+      return workspaceFilename;
+    }
+  }
+
   const urlParts = url.split('/');
   let fileName = urlParts[urlParts.length - 1] || 'document.md';
 

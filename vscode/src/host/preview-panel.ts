@@ -198,10 +198,10 @@ export class MarkdownPreviewPanel {
     this._panel.title = `Preview: ${path.basename(document.fileName)}`;
     
     // Include scrollLine so the render flow uses it as targetLine directly,
-    // instead of relying on a separate SCROLL_TO_LINE message that may race
+    // instead of relying on a separate SYNC_HOST_NAVIGATION message that may race
     // with editor-driven scroll events.
     const line = typeof initialLine === 'number' ? initialLine : 0;
-    this.updateContent(document.getText(), line);
+    this.openDocument(document.getText(), line);
   }
 
   public isDocumentMatch(document: vscode.TextDocument): boolean {
@@ -229,20 +229,39 @@ export class MarkdownPreviewPanel {
     });
   }
 
-  public updateContent(content: string, scrollLine?: number): void {
-    // Calculate document directory webview URI for resolving relative paths
+  private _buildDocumentPayload(content: string, scrollLine?: number): {
+    content: string;
+    filename: string;
+    documentKey: string;
+    documentBaseUri?: string;
+    scrollLine?: number;
+  } {
     let documentBaseUri: string | undefined;
+    let filename = 'untitled.md';
+    let documentKey = 'untitled';
+
     if (this._document) {
       const docDir = vscode.Uri.file(path.dirname(this._document.uri.fsPath));
       documentBaseUri = this._panel.webview.asWebviewUri(docDir).toString();
+      filename = path.basename(this._document.fileName);
+      documentKey = this._document.uri.toString();
     }
 
-    this._postToWebview('UPDATE_CONTENT', {
+    return {
       content,
-      filename: this._document ? path.basename(this._document.fileName) : 'untitled.md',
+      filename,
+      documentKey,
       documentBaseUri,
       scrollLine,
-    });
+    };
+  }
+
+  public openDocument(content: string, scrollLine?: number): void {
+    this._postToWebview('OPEN_DOCUMENT', this._buildDocumentPayload(content, scrollLine));
+  }
+
+  public updateContent(content: string, scrollLine?: number): void {
+    this._postToWebview('UPDATE_CONTENT', this._buildDocumentPayload(content, scrollLine));
   }
 
   public refresh(): void {
@@ -324,7 +343,7 @@ export class MarkdownPreviewPanel {
     if (Date.now() < this._previewScrolledEditorUntil) {
       return;
     }
-    this._postToWebview('SCROLL_TO_LINE', { line });
+    this._postToWebview('SYNC_HOST_NAVIGATION', { line });
   }
 
   /**
@@ -351,7 +370,7 @@ export class MarkdownPreviewPanel {
     // the actual editor content below the sticky header.
     const stickyHeight = this._getEstimatedStickyHeight(Math.floor(line));
     const adjustedLine = line + stickyHeight;
-    this._postToWebview('SCROLL_TO_LINE', { line: adjustedLine });
+    this._postToWebview('SYNC_HOST_NAVIGATION', { line: adjustedLine });
   }
 
   /**
@@ -506,7 +525,7 @@ export class MarkdownPreviewPanel {
           
           // Send initial content
           if (this._document) {
-            this.updateContent(this._document.getText());
+            this.openDocument(this._document.getText());
           }
           
           // Check if we should open settings

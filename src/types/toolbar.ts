@@ -41,6 +41,8 @@ export interface ToolbarManagerOptions {
   toolbarPrintDisabledTitle: string;
   /** Called before zoom changes to lock scroll position */
   onBeforeZoom?: () => void;
+  /** Set TOC visibility from the host/session state owner */
+  onSetTocVisibility?: (visible: boolean) => void;
   /** Whether to show source/preview toggle button */
   enableSourceToggle?: boolean;
   /** Toggle between markdown preview and source mode */

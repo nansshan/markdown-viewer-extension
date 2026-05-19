@@ -260,7 +260,7 @@ class VSCodeMessageService {
  * Unlike Chrome/Mobile which persist state to storage, VSCode communicates
  * scroll position with the extension host:
  * - set() sends REVEAL_LINE message to host (Preview → Editor sync)
- * - Host sends SCROLL_TO_LINE message which updates the state (Editor → Preview sync)
+ * - Host sends SYNC_HOST_NAVIGATION message which updates the state (Editor → Preview sync)
  */
 class VSCodeFileStateService {
   private states: Map<string, FileState> = new Map();
@@ -275,7 +275,7 @@ class VSCodeFileStateService {
   }
 
   /**
-   * Update state from host message (SCROLL_TO_LINE)
+  * Update state from host message (SYNC_HOST_NAVIGATION)
    */
   setScrollLineFromHost(url: string, scrollLine: number): void {
     const existing = this.states.get(url) || {};

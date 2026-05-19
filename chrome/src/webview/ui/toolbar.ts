@@ -55,6 +55,7 @@ export function createToolbarManager(options: ToolbarManagerOptions): ToolbarMan
     updateActiveTocItem,
     toolbarPrintDisabledTitle,
     onBeforeZoom,
+    onSetTocVisibility,
     enableSourceToggle,
     onToggleSourceMode,
     getSourceMode,
@@ -362,26 +363,38 @@ export function createToolbarManager(options: ToolbarManagerOptions): ToolbarMan
     const tocDiv = document.getElementById('table-of-contents');
     const overlayDiv = document.getElementById('toc-overlay');
 
+    const setTocVisibility = (visible: boolean): void => {
+      if (onSetTocVisibility) {
+        onSetTocVisibility(visible);
+        return;
+      }
+
+      if (!tocDiv || !overlayDiv) {
+        return;
+      }
+
+      tocDiv.classList.toggle('hidden', !visible);
+      document.body.classList.toggle('toc-hidden', !visible);
+      if (isMobile && visible) {
+        overlayDiv.classList.remove('hidden');
+      } else {
+        overlayDiv.classList.add('hidden');
+      }
+
+      saveFileState({
+        tocVisible: visible,
+      });
+    };
+
     if (toggleTocBtn && tocDiv && overlayDiv) {
       toggleTocBtn.addEventListener('click', () => {
         // If TOC has no content (no headings), do nothing
         if (tocDiv.style.display === 'none') {
           return;
         }
-        
-        const willBeHidden = !tocDiv.classList.contains('hidden');
-        tocDiv.classList.toggle('hidden');
-        document.body.classList.toggle('toc-hidden');
-        if (isMobile) {
-          overlayDiv.classList.toggle('hidden');
-        } else {
-          overlayDiv.classList.add('hidden');
-        }
-        
-        // Save TOC visibility state
-        saveFileState({
-          tocVisible: !willBeHidden
-        });
+
+        const nextVisible = tocDiv.classList.contains('hidden');
+        setTocVisibility(nextVisible);
       });
     }
 
@@ -581,21 +594,9 @@ export function createToolbarManager(options: ToolbarManagerOptions): ToolbarMan
       if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
         e.preventDefault();
         const tocDiv = document.getElementById('table-of-contents');
-        const overlayDiv = document.getElementById('toc-overlay');
-        if (tocDiv && overlayDiv) {
-          const willBeHidden = !tocDiv.classList.contains('hidden');
-          tocDiv.classList.toggle('hidden');
-          document.body.classList.toggle('toc-hidden');
-          if (isMobile) {
-            overlayDiv.classList.toggle('hidden');
-          } else {
-            overlayDiv.classList.add('hidden');
-          }
-          
-          // Save TOC visibility state
-          saveFileState({
-            tocVisible: !willBeHidden
-          });
+        if (tocDiv) {
+          const nextVisible = tocDiv.classList.contains('hidden');
+          setTocVisibility(nextVisible);
         }
         return;
       }

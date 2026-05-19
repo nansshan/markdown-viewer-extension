@@ -287,7 +287,7 @@ class _SettingsPageState extends State<SettingsPage> {
         // Send themeId only - WebView loads theme data itself
         final escapedTheme = selectedTheme.replaceAll('\\', '\\\\').replaceAll("'", "\\'");
         await controller.runJavaScript(
-          "if(window.setTheme){window.setTheme('$escapedTheme');}",
+          "if(window.syncHostUi){window.syncHostUi({themeId:'$escapedTheme'});}else{console.error('syncHostUi not defined');}",
         );
       } catch (e) {
         debugPrint('[Settings] Failed to apply theme: $e');
@@ -333,7 +333,7 @@ class _SettingsPageState extends State<SettingsPage> {
               if (controller != null) {
                 final localeToSend = locale ?? localization.currentLocale;
                 controller.runJavaScript(
-                  "if(window.setLocale){window.setLocale('$localeToSend');}",
+                  "if(window.syncHostUi){window.syncHostUi({locale:'$localeToSend'});}else{console.error('syncHostUi not defined');}",
                 );
               }
               // Close settings page

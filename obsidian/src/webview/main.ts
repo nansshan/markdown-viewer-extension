@@ -52,8 +52,22 @@ globalThis.platform = platform;
 let rootContainer: HTMLElement | null = null;
 let contentContainer: HTMLElement | null = null;
 
-let currentMarkdown = '';
-let currentFilename = '';
+interface CurrentDocumentState {
+  sourceContent: string;
+  renderedMarkdown: string;
+  filename: string;
+  documentPath: string;
+  baseUri: string;
+}
+
+const currentDocument: CurrentDocumentState = {
+  sourceContent: '',
+  renderedMarkdown: '',
+  filename: '',
+  documentPath: '',
+  baseUri: '',
+};
+
 let currentThemeId = 'default';
 let currentTaskManager: AsyncTaskManager | null = null;
 let currentZoomLevel = 1;
@@ -245,10 +259,73 @@ interface UpdateContentPayload {
   scrollLine?: number;
 }
 
+interface OpenDocumentPayload {
+  content: string;
+  filename?: string;
+  documentPath?: string;
+  documentBaseUri?: string;
+  scrollLine?: number;
+}
+
+interface SyncHostUiPayload {
+  themeId?: string;
+}
+
+interface SyncHostNavigationPayload {
+  line: number;
+}
+
+function hasCurrentDocument(): boolean {
+  return currentDocument.filename.length > 0
+    || currentDocument.documentPath.length > 0
+    || currentDocument.sourceContent.length > 0;
+}
+
+function getCurrentDocumentPayload(overrides: {
+  forceRender?: boolean;
+  scrollLine?: number;
+} = {}): UpdateContentPayload {
+  return {
+    content: currentDocument.sourceContent,
+    filename: currentDocument.filename,
+    documentPath: currentDocument.documentPath || undefined,
+    documentBaseUri: currentDocument.baseUri || undefined,
+    ...overrides,
+  };
+}
+
+async function rerenderCurrentDocument(overrides: {
+  forceRender?: boolean;
+  scrollLine?: number;
+} = {}): Promise<void> {
+  if (!hasCurrentDocument()) {
+    return;
+  }
+
+  await handleUpdateContent(getCurrentDocumentPayload(overrides));
+}
+
+function getCurrentScrollLine(): number {
+  return scrollSyncController?.getCurrentLine() ?? 0;
+}
+
+async function rerenderCurrentDocumentPreservingScroll(): Promise<void> {
+  await rerenderCurrentDocument({ forceRender: true, scrollLine: getCurrentScrollLine() });
+}
+
+async function syncHostUi(payload: SyncHostUiPayload): Promise<void> {
+  if (payload.themeId !== undefined) {
+    await handleSetTheme(payload.themeId);
+  }
+}
+
 function handleHostMessage(message: HostMessage): void {
   const { type, payload } = message;
 
   switch (type) {
+    case 'OPEN_DOCUMENT':
+      renderQueue = renderQueue.then(() => handleOpenDocument(payload as OpenDocumentPayload));
+      break;
     case 'UPDATE_CONTENT':
       renderQueue = renderQueue.then(() => handleUpdateContent(payload as UpdateContentPayload));
       break;
@@ -267,15 +344,15 @@ function handleHostMessage(message: HostMessage): void {
     case 'PRINT':
       handlePrint();
       break;
-    case 'SET_THEME':
-      handleSetTheme((payload as { themeId: string }).themeId);
+    case 'SYNC_HOST_UI':
+      renderQueue = renderQueue.then(() => syncHostUi(payload as SyncHostUiPayload));
       break;
     case 'OPEN_SETTINGS':
       handleOpenSettings();
       break;
-    case 'SCROLL_TO_LINE':
+    case 'SYNC_HOST_NAVIGATION':
       if (scrollSyncController && payload) {
-        scrollSyncController.scrollToLine((payload as { line: number }).line);
+        scrollSyncController.scrollToLine((payload as SyncHostNavigationPayload).line);
       }
       break;
     default:
@@ -331,7 +408,18 @@ async function inlineLocalImages(container: HTMLElement): Promise<void> {
 // Content Rendering
 // ============================================================================
 
+async function handleOpenDocument(payload: OpenDocumentPayload): Promise<void> {
+  await handleDocumentUpdate(payload, true);
+}
+
 async function handleUpdateContent(payload: UpdateContentPayload): Promise<void> {
+  await handleDocumentUpdate(payload, false);
+}
+
+async function handleDocumentUpdate(
+  payload: UpdateContentPayload | OpenDocumentPayload,
+  treatAsNewDocument: boolean,
+): Promise<void> {
   const { content, filename, documentPath, documentBaseUri, forceRender, scrollLine } = payload;
   const container = contentContainer;
   if (!container) {
@@ -345,10 +433,15 @@ async function handleUpdateContent(payload: UpdateContentPayload): Promise<void>
   }
 
   const newFilename = filename || 'document.md';
-  const fileChanged = currentFilename !== newFilename;
+  const nextDocumentPath = documentPath || '';
+  const documentKey = nextDocumentPath || newFilename;
+  const fileChanged = treatAsNewDocument || currentDocument.documentPath !== nextDocumentPath || currentDocument.filename !== newFilename;
 
-  currentMarkdown = content;
-  currentFilename = newFilename;
+  currentDocument.sourceContent = content;
+  currentDocument.filename = newFilename;
+  currentDocument.documentPath = nextDocumentPath;
+  currentDocument.baseUri = documentBaseUri || '';
+  currentDocument.renderedMarkdown = content;
 
   // ── Slidev mode: .slides.md files render as presentations ────────────
   const lowerFilename = newFilename.toLowerCase();
@@ -433,9 +526,9 @@ async function handleUpdateContent(payload: UpdateContentPayload): Promise<void>
   }
 
   const wrappedContent = wrapFileContent(content, newFilename);
-  currentMarkdown = wrappedContent;
+  currentDocument.renderedMarkdown = wrappedContent;
 
-  setCurrentFileKey(newFilename);
+  setCurrentFileKey(documentKey);
 
   // Create scroll controller lazily
   if (!scrollSyncController) {
@@ -554,14 +647,7 @@ async function handleSetTheme(themeId: string): Promise<void> {
       applyTheme: loadAndApplyTheme,
       saveTheme: (id) => themeManager.saveSelectedTheme(id),
       rerender: async (scrollLine) => {
-        if (currentMarkdown) {
-          await handleUpdateContent({
-            content: currentMarkdown,
-            filename: currentFilename,
-            forceRender: true,
-            scrollLine,
-          });
-        }
+        await rerenderCurrentDocument({ forceRender: true, scrollLine });
       },
     });
     obsidianBridge.postMessage('THEME_CHANGED', { themeId });
@@ -576,8 +662,8 @@ async function handleSetTheme(themeId: string): Promise<void> {
 
 async function handleExportDocx(): Promise<void> {
   await exportDocxFlow({
-    markdown: currentMarkdown,
-    filename: currentFilename,
+    markdown: currentDocument.renderedMarkdown,
+    filename: currentDocument.filename,
     renderer: pluginRenderer,
     onProgress: (completed, total) => {
       obsidianBridge.postMessage('EXPORT_PROGRESS', { completed, total, phase: 'processing', format: 'docx' });
@@ -599,8 +685,8 @@ async function handleExportHtml(): Promise<void> {
 
   await exportHtmlFlow({
     container: page,
-    filename: currentFilename,
-    title: currentFilename || document.title || 'Markdown Viewer',
+    filename: currentDocument.filename,
+    title: currentDocument.filename || document.title || 'Markdown Viewer',
     platform,
     onProgress: (completed, total, phase) => {
       obsidianBridge.postMessage('EXPORT_PROGRESS', {
@@ -624,7 +710,7 @@ async function handlePrint(): Promise<void> {
   if (!page) {
     return;
   }
-  await printElement(page, currentFilename || document.title || 'Markdown Viewer');
+  await printElement(page, currentDocument.filename || document.title || 'Markdown Viewer');
 }
 
 // ============================================================================
@@ -696,9 +782,7 @@ function initializeUI(): void {
       settingsPanel?.updateLabels();
       tocPanel?.updateLocalization();
       await loadThemesForSettings();
-      if (currentMarkdown) {
-        await handleUpdateContent({ content: currentMarkdown, filename: currentFilename });
-      }
+      await rerenderCurrentDocument();
     },
     onDocxHrDisplayChange: async (display) => {
       await platform.settings.set('docxHrDisplay', display);
@@ -708,24 +792,15 @@ function initializeUI(): void {
     },
     onFrontmatterDisplayChange: async (display) => {
       await platform.settings.set('frontmatterDisplay', display);
-      if (currentMarkdown) {
-        const scrollLine = scrollSyncController?.getCurrentLine() ?? 0;
-        await handleUpdateContent({ content: currentMarkdown, filename: currentFilename, forceRender: true, scrollLine });
-      }
+      await rerenderCurrentDocumentPreservingScroll();
     },
     onTableMergeEmptyChange: async (enabled) => {
       await platform.settings.set('tableMergeEmpty', enabled);
-      if (currentMarkdown) {
-        const scrollLine = scrollSyncController?.getCurrentLine() ?? 0;
-        await handleUpdateContent({ content: currentMarkdown, filename: currentFilename, forceRender: true, scrollLine });
-      }
+      await rerenderCurrentDocumentPreservingScroll();
     },
     onTableLayoutChange: async (layout) => {
       await platform.settings.set('tableLayout', layout);
-      if (currentMarkdown) {
-        const scrollLine = scrollSyncController?.getCurrentLine() ?? 0;
-        await handleUpdateContent({ content: currentMarkdown, filename: currentFilename, forceRender: true, scrollLine });
-      }
+      await rerenderCurrentDocumentPreservingScroll();
     },
     onClearCache: async () => {
       await platform.cache.clear();

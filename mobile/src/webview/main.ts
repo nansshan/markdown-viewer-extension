@@ -37,10 +37,18 @@ globalThis.platform = platform;
 // Expose bridge for shared plugins that need host file/asset access
 globalThis.bridge = bridge;
 
+interface CurrentDocumentState {
+  sourceContent: string;
+  filename: string;
+  filePath: string;
+}
+
 // Global state
-let currentMarkdown = '';
-let currentFilename = '';
-let currentFilePath = ''; // File path for state persistence (used by FileStateService)
+const currentDocument: CurrentDocumentState = {
+  sourceContent: '',
+  filename: '',
+  filePath: '',
+};
 let currentThemeId = 'default'; // Current theme ID (loaded via shared loadAndApplyTheme)
 // Stable ref object so renderMarkdownFlow can abort previous renders across calls
 const currentTaskManagerRef: { current: AsyncTaskManager | null } = { current: null };
@@ -62,7 +70,7 @@ interface LoadMarkdownPayload {
   filename?: string;
   filePath?: string;    // File path for state persistence
   themeId?: string;     // Theme ID (WebView loads theme data itself)
-  scrollLine?: number;  // Saved scroll position (line number) - legacy, prefer fileState
+  targetLine?: number;  // Explicit target line for rerender/navigation
   forceRender?: boolean; // Force re-render even if file hasn't changed (e.g., theme change)
 }
 
@@ -71,6 +79,12 @@ interface LoadMarkdownPayload {
  */
 interface SetThemePayload {
   themeId: string;
+}
+
+interface SyncHostUiPayload {
+  themeId?: string;
+  locale?: string;
+  settings?: Record<string, unknown>;
 }
 
 /**
@@ -92,7 +106,56 @@ interface SetLocalePayload {
  */
 interface BridgeMessage {
   type?: string;
-  payload?: LoadMarkdownPayload | SetThemePayload | UpdateSettingsPayload | SetLocalePayload;
+  payload?: LoadMarkdownPayload | SetThemePayload | UpdateSettingsPayload | SetLocalePayload | SyncHostUiPayload;
+}
+
+function hasCurrentDocument(): boolean {
+  return currentDocument.filePath.length > 0
+    || currentDocument.filename.length > 0
+    || currentDocument.sourceContent.length > 0;
+}
+
+function getCurrentDocumentPayload(overrides: Partial<LoadMarkdownPayload> = {}): LoadMarkdownPayload {
+  return {
+    content: currentDocument.sourceContent,
+    filename: currentDocument.filename || undefined,
+    filePath: currentDocument.filePath || undefined,
+    ...overrides,
+  };
+}
+
+function getCurrentScrollLine(): number {
+  return scrollSyncController?.getCurrentLine() ?? 0;
+}
+
+async function rerenderCurrentDocument(overrides: Partial<LoadMarkdownPayload> = {}): Promise<void> {
+  if (!hasCurrentDocument()) {
+    return;
+  }
+
+  await handleLoadMarkdown(getCurrentDocumentPayload(overrides));
+}
+
+async function rerenderCurrentDocumentPreservingScroll(overrides: Partial<LoadMarkdownPayload> = {}): Promise<void> {
+  await rerenderCurrentDocument({
+    forceRender: true,
+    targetLine: getCurrentScrollLine(),
+    ...overrides,
+  });
+}
+
+async function syncHostUi(payload: SyncHostUiPayload): Promise<void> {
+  if (payload.themeId !== undefined) {
+    await handleSetTheme({ themeId: payload.themeId });
+  }
+
+  if (payload.locale !== undefined) {
+    await handleSetLocale({ locale: payload.locale });
+  }
+
+  if (payload.settings !== undefined) {
+    await handleUpdateSettings({ settings: payload.settings });
+  }
 }
 
 function isBridgeMessage(message: unknown): message is BridgeMessage {
@@ -193,12 +256,16 @@ function setupMessageHandlers(): void {
 
     try {
       switch (message.type) {
-        case 'LOAD_MARKDOWN':
+        case 'OPEN_DOCUMENT':
           await handleLoadMarkdown(message.payload as LoadMarkdownPayload);
           break;
 
-        case 'SET_THEME':
-          await handleSetTheme(message.payload as SetThemePayload);
+        case 'UPDATE_CONTENT':
+          await handleLoadMarkdown(message.payload as LoadMarkdownPayload);
+          break;
+
+        case 'SYNC_HOST_UI':
+          await syncHostUi(message.payload as SyncHostUiPayload);
           break;
 
         case 'EXPORT_DOCX':
@@ -211,10 +278,6 @@ function setupMessageHandlers(): void {
 
         case 'UPDATE_SETTINGS':
           await handleUpdateSettings(message.payload as UpdateSettingsPayload);
-          break;
-
-        case 'SET_LOCALE':
-          await handleSetLocale(message.payload as SetLocalePayload);
           break;
 
         default:
@@ -231,31 +294,32 @@ function setupMessageHandlers(): void {
  * Handle loading Markdown content
  */
 async function handleLoadMarkdown(payload: LoadMarkdownPayload): Promise<void> {
-  const { content, filename, filePath, themeId, scrollLine, forceRender } = payload;
+  const { content, filename, filePath, themeId, targetLine, forceRender } = payload;
 
   // Check if file changed
   const newFilename = filename || 'document.md';
   const newFilePath = filePath || newFilename; // Fallback to filename if no path
-  const fileChanged = currentFilename !== newFilename;
+  const fileChanged = currentDocument.filePath !== newFilePath;
 
-
-  currentMarkdown = content;
-  currentFilename = newFilename;
-  currentFilePath = newFilePath;
+  currentDocument.sourceContent = content;
+  currentDocument.filename = newFilename;
+  currentDocument.filePath = newFilePath;
 
   // Set file key for scroll position persistence (used by viewer-host)
   setCurrentFileKey(newFilePath);
 
-  // Get saved scroll position from FileStateService (fallback to legacy scrollLine param)
-  let savedScrollLine = scrollLine ?? 0;
-  if (currentFilePath) {
+  // An explicit targetLine is an immediate navigation request; otherwise restore file state.
+  let savedScrollLine = typeof targetLine === 'number' && Number.isFinite(targetLine)
+    ? Math.max(0, Math.floor(targetLine))
+    : 0;
+  if (savedScrollLine === 0 && currentDocument.filePath) {
     try {
-      const fileState = await platform.fileState.get(currentFilePath);
+      const fileState = await platform.fileState.get(currentDocument.filePath);
       if (fileState.scrollLine !== undefined) {
         savedScrollLine = fileState.scrollLine;
       }
     } catch {
-      // Use legacy scrollLine on error
+      // Keep default scroll line when file state is unavailable.
     }
   }
 
@@ -451,10 +515,7 @@ async function handleSetTheme(payload: SetThemePayload): Promise<void> {
       scrollController: scrollSyncController,
       applyTheme: loadAndApplyTheme,
       rerender: async (scrollLine) => {
-        // Re-render if we have content
-        if (currentMarkdown) {
-          await handleLoadMarkdown({ content: currentMarkdown, filename: currentFilename || '', scrollLine, forceRender: true });
-        }
+        await rerenderCurrentDocument({ targetLine: scrollLine, forceRender: true });
       },
     });
     
@@ -470,8 +531,8 @@ async function handleSetTheme(payload: SetThemePayload): Promise<void> {
  */
 async function handleExportDocx(): Promise<void> {
   await exportDocxFlow({
-    markdown: currentMarkdown,
-    filename: currentFilename,
+    markdown: currentDocument.sourceContent,
+    filename: currentDocument.filename,
     renderer: pluginRenderer,
     onProgress: (completed, total) => {
       bridge.postMessage('EXPORT_PROGRESS', { 
@@ -500,8 +561,8 @@ async function handleExportHtml(): Promise<void> {
 
   await exportHtmlFlow({
     container: page,
-    filename: currentFilename,
-    title: currentFilename || document.title || 'Markdown Viewer',
+    filename: currentDocument.filename,
+    title: currentDocument.filename || document.title || 'Markdown Viewer',
     platform,
     onProgress: (completed, total, phase) => {
       bridge.postMessage('EXPORT_PROGRESS', {
@@ -536,9 +597,7 @@ async function handleSetLocale(payload: SetLocalePayload): Promise<void> {
     bridge.postMessage('LOCALE_CHANGED', { locale: payload.locale });
     
     // Re-render content with new locale (for translated error messages, etc.)
-    if (currentMarkdown) {
-      await handleLoadMarkdown({ content: currentMarkdown, filename: currentFilename || '' });
-    }
+    await rerenderCurrentDocument();
   } catch (error) {
     console.error('[Mobile] Locale change failed:', error);
   }
@@ -548,16 +607,14 @@ async function handleSetLocale(payload: SetLocalePayload): Promise<void> {
 // Most functionality is now on platform object, only expose minimal API for Flutter calls
 declare global {
   interface Window {
-    // Content loading (Flutter sends themeId, WebView loads theme itself)
-    loadMarkdown: (content: string, filename?: string, themeId?: string, scrollLine?: number) => void;
-    // Theme change (Flutter sends themeId only)
-    setTheme: (themeId: string) => void;
+    openDocument: (payload: LoadMarkdownPayload) => void;
+    updateContent: (payload: LoadMarkdownPayload) => void;
+    syncHostUi: (payload: SyncHostUiPayload) => Promise<void>;
     // Export
     exportDocx: () => void;
     exportHtml: () => void;
     // Display settings
     setFontSize: (size: number) => void;
-    setLocale: (locale: string) => void;
     // Re-render with updated settings
     rerender: () => Promise<void>;
     // Platform object has all services: platform.cache, platform.i18n, etc.
@@ -565,25 +622,16 @@ declare global {
 }
 
 // Expose API to window for host app to call (e.g. via runJavaScript)
-// Supports both object payload and legacy positional arguments
-window.loadMarkdown = (
-  contentOrPayload: string | LoadMarkdownPayload, 
-  filename?: string, 
-  themeId?: string, 
-  scrollLine?: number
-) => {
-  // Check if first argument is object payload or string content
-  if (typeof contentOrPayload === 'object' && contentOrPayload !== null) {
-    handleLoadMarkdown(contentOrPayload);
-  } else {
-    // Legacy: positional arguments
-    handleLoadMarkdown({ content: contentOrPayload, filename, themeId, scrollLine });
-  }
+window.openDocument = (payload: LoadMarkdownPayload) => {
+  handleLoadMarkdown(payload);
 };
 
-// Set theme (WebView loads theme data itself using shared loadAndApplyTheme)
-window.setTheme = (themeId: string) => {
-  handleSetTheme({ themeId });
+window.updateContent = (payload: LoadMarkdownPayload) => {
+  handleLoadMarkdown(payload);
+};
+
+window.syncHostUi = async (payload: SyncHostUiPayload) => {
+  await syncHostUi(payload);
 };
 
 window.exportDocx = () => {
@@ -615,15 +663,9 @@ window.setFontSize = (size: number) => {
   }
 };
 
-window.setLocale = (locale: string) => {
-  handleSetLocale({ locale });
-};
-
 window.rerender = async () => {
   // Re-render current markdown with updated settings
-  if (currentMarkdown) {
-    await handleLoadMarkdown({ content: currentMarkdown, filename: currentFilename || '', forceRender: true });
-  }
+  await rerenderCurrentDocumentPreservingScroll();
 };
 
 // Initialize when DOM is ready
