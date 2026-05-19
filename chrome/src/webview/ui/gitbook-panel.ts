@@ -26,11 +26,6 @@ interface GitbookPanel {
   setupResponsivePanel(): Promise<void>;
 }
 
-function logDebug(message: string, ...args: unknown[]): void {
-  void message;
-  void args;
-}
-
 function isMarkdownDocumentUrl(url: string): boolean {
   try {
     const pathname = new URL(url, window.location.href).pathname.toLowerCase();
@@ -142,38 +137,30 @@ async function readSummaryByRelativePath(
   try {
     const summaryParsedUrl = new URL(relativePath, currentUrl);
     const summaryUrl = summaryParsedUrl.href;
-    logDebug('Trying summary candidate', { relativePath, summaryUrl });
 
     if (readRelativeFile) {
       try {
         const content = await readRelativeFile(relativePath);
-        logDebug('Summary loaded via readRelativeFile', { summaryUrl, length: content.length });
         return { summaryUrl, content };
       } catch (error) {
-        logDebug('readRelativeFile failed, fallback to fetch', {
-          summaryUrl,
-          error: (error as Error).message,
-        });
+        void error;
       }
     }
 
     // Avoid fetch on local file URLs to prevent browser CORS errors in file origin.
     if (summaryParsedUrl.protocol === 'file:') {
-      logDebug('Skip fetch for file URL summary candidate', { summaryUrl });
       return null;
     }
 
     const response = await fetch(summaryUrl);
     if (!response.ok) {
-      logDebug('Summary fetch not ok', { summaryUrl, status: response.status });
       return null;
     }
 
     const content = await response.text();
-    logDebug('Summary loaded via fetch', { summaryUrl, length: content.length });
     return { summaryUrl, content };
   } catch (error) {
-    logDebug('Summary candidate failed', { relativePath, error: (error as Error).message });
+    void error;
     return null;
   }
 }
@@ -183,7 +170,6 @@ async function loadGitbookNavigation(
   readRelativeFile?: (relativePath: string) => Promise<string>
 ): Promise<GitbookNavItem[] | null> {
   if (!isMarkdownDocumentUrl(currentUrl)) {
-    logDebug('Skip GitBook discovery for non-markdown URL', { currentUrl });
     return null;
   }
 
@@ -231,10 +217,6 @@ async function loadGitbookNavigation(
         }
 
         const navItems = parseGitbookSummary(loaded.content, loaded.summaryUrl);
-        logDebug('Summary parsed', {
-          summaryUrl: loaded.summaryUrl,
-          itemCount: navItems.length,
-        });
         if (navItems.length > 0) {
           return navItems;
         }
@@ -242,14 +224,12 @@ async function loadGitbookNavigation(
     }
 
     if (!checkedAtLeastOne && depth > 0) {
-      logDebug('Stopping GitBook discovery: reached repository root or URL root', { depth });
       break;
     }
 
     depth += 1;
   }
 
-  logDebug('No SUMMARY.md found while walking upward', { currentUrl });
   return null;
 }
 
@@ -333,7 +313,6 @@ export function createGitbookPanel(
     const currentUrl = options.currentUrl || window.location.href;
     const navItems = await loadGitbookNavigation(currentUrl, options.readRelativeFile);
     if (!navItems || navItems.length === 0) {
-      logDebug('No GitBook items found, keeping panel hidden');
       setPanelVisibility(false);
       return false;
     }
@@ -363,7 +342,6 @@ export function createGitbookPanel(
         if (!href) {
           return;
         }
-        logDebug('Navigate via GitBook panel', { href, title });
         
         try {
           let content: string | null = null;
@@ -372,10 +350,7 @@ export function createGitbookPanel(
             try {
               content = await options.readRelativeFile(href);
             } catch (error) {
-              logDebug('readRelativeFile failed for navigation target, fallback to fetch', {
-                href,
-                error: (error as Error).message,
-              });
+              void error;
             }
           }
 
@@ -408,7 +383,6 @@ export function createGitbookPanel(
     });
 
     markActiveGitbookItem(panelDiv);
-    logDebug('Rendered GitBook panel', { itemCount: navItems.length });
     return true;
   }
 
@@ -433,7 +407,6 @@ export function createGitbookPanel(
   async function generateGitbookPanel(): Promise<void> {
     const panelDiv = document.getElementById('gitbook-panel');
     if (!panelDiv) {
-      logDebug('GitBook panel container not found');
       return;
     }
 

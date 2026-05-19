@@ -791,23 +791,21 @@ html[data-code-view] #markdown-content {
 html[data-code-view] #markdown-content pre {
   margin: 0;
   border-radius: 0;
-  padding: 16px 16px 16px 60px;
+  padding: 16px;
   overflow: visible;
-  white-space: pre;
-  word-break: normal;
   position: relative;
 }
 html[data-code-view] #markdown-content pre code {
   display: block;
-  padding-right: 16px;
 }
-html[data-code-view] #markdown-content pre code::before {
-  content: attr(data-line-numbers);
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: 44px;
-  padding: 16px 8px 16px 0;
+html[data-code-view] #markdown-content pre code .mv-code-line {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  column-gap: 16px;
+  align-items: start;
+}
+html[data-code-view] #markdown-content pre code .mv-code-line::before {
+  content: attr(data-line-number);
   text-align: right;
   white-space: pre;
   color: var(--color-text-tertiary, #6e7781);
@@ -816,6 +814,17 @@ html[data-code-view] #markdown-content pre code::before {
   pointer-events: none;
   font: inherit;
   line-height: inherit;
+}
+html[data-code-view] #markdown-content pre code .mv-code-line-content {
+  min-width: 0;
+  padding-right: 16px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+html[data-code-view] #markdown-content pre code .mv-code-line-content:empty::before {
+  content: ' ';
+  visibility: hidden;
 }
 
 #markdown-content blockquote {

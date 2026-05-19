@@ -19,6 +19,9 @@ export function getCopyableCodeText(
   pre: Pick<HTMLElement, 'querySelector' | 'textContent'>
 ): string {
   const code = pre.querySelector('code');
+  if (code instanceof HTMLElement && typeof code.dataset.rawCodeText === 'string') {
+    return code.dataset.rawCodeText;
+  }
   return code?.textContent ?? pre.textContent ?? '';
 }
 

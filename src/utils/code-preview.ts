@@ -102,10 +102,8 @@ export function applyCodeViewPresentation(enabled: boolean): void {
   const applyLineNumbers = (): boolean => {
     const code = document.querySelector('#markdown-content pre code');
     if (!code) return false;
-    const text = code.textContent || '';
-    const lines = text.replace(/\n+$/, '').split('\n');
-    const nums = lines.map((_, i) => i + 1).join('\n');
-    (code as HTMLElement).dataset.lineNumbers = nums;
+
+    decorateCodeViewLines(code as HTMLElement);
     return true;
   };
 
@@ -119,4 +117,88 @@ export function applyCodeViewPresentation(enabled: boolean): void {
     observer.disconnect();
   });
   observer.observe(document.body, { childList: true, subtree: true });
+}
+
+function decorateCodeViewLines(code: HTMLElement): void {
+  if (code.dataset.codeViewDecorated === '1') {
+    return;
+  }
+
+  const rawText = code.textContent || '';
+  const normalizedText = rawText.replace(/\n+$/, '');
+  const sourceNodes = Array.from(code.childNodes);
+  const lineElements: HTMLElement[] = [];
+
+  let currentLine = createCodeViewLine(1);
+  lineElements.push(currentLine);
+
+  const appendTextSegment = (text: string, ancestors: HTMLElement[]): void => {
+    if (!text) {
+      return;
+    }
+
+    let target: Node = currentLine.querySelector('.mv-code-line-content') as HTMLElement;
+    for (const ancestor of ancestors) {
+      const clone = ancestor.cloneNode(false) as HTMLElement;
+      target.appendChild(clone);
+      target = clone;
+    }
+    target.appendChild(document.createTextNode(text));
+  };
+
+  const startNewLine = (): void => {
+    currentLine = createCodeViewLine(lineElements.length + 1);
+    lineElements.push(currentLine);
+  };
+
+  const walkNode = (node: ChildNode, ancestors: HTMLElement[]): void => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const parts = (node.textContent || '').split('\n');
+      parts.forEach((part, index) => {
+        appendTextSegment(part, ancestors);
+        if (index < parts.length - 1) {
+          startNewLine();
+        }
+      });
+      return;
+    }
+
+    if (!(node instanceof HTMLElement)) {
+      return;
+    }
+
+    const nextAncestors = [...ancestors, node];
+    Array.from(node.childNodes).forEach((child) => {
+      walkNode(child, nextAncestors);
+    });
+  };
+
+  sourceNodes.forEach((node) => {
+    walkNode(node, []);
+  });
+
+  while (lineElements.length > 1) {
+    const lastLine = lineElements[lineElements.length - 1];
+    const content = lastLine.querySelector('.mv-code-line-content');
+    if ((content?.textContent || '') !== '') {
+      break;
+    }
+    lineElements.pop();
+  }
+
+  code.replaceChildren(...lineElements);
+  code.dataset.codeViewDecorated = '1';
+  code.dataset.rawCodeText = normalizedText;
+}
+
+function createCodeViewLine(lineNumber: number): HTMLSpanElement {
+  const line = document.createElement('span');
+  line.className = 'mv-code-line';
+  line.dataset.lineNumber = String(lineNumber);
+
+  const content = document.createElement('span');
+  content.className = 'mv-code-line-content';
+  line.appendChild(content);
+
+  return line;
 }

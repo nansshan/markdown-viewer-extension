@@ -51,6 +51,110 @@ function getBlockTop(block: HTMLElement, scrollContainer?: HTMLElement): number 
   return block.getBoundingClientRect().top - containerRect.top + scrollContainer.scrollTop;
 }
 
+function getCodeViewLineElements(block: HTMLElement): HTMLElement[] {
+  return Array.from(block.querySelectorAll<HTMLElement>(':scope .mv-code-line'));
+}
+
+function getCodeViewLogicalLine(
+  block: HTMLElement,
+  effectiveScrollTop: number,
+  scrollContainer?: HTMLElement,
+): number | null {
+  const lineElements = getCodeViewLineElements(block);
+  if (lineElements.length === 0) {
+    return null;
+  }
+
+  let targetIndex = 0;
+  for (let i = 0; i < lineElements.length; i++) {
+    const lineTop = getBlockTop(lineElements[i], scrollContainer);
+    if (lineTop > effectiveScrollTop) {
+      break;
+    }
+    targetIndex = i;
+  }
+
+  const lineElement = lineElements[targetIndex];
+  const lineTop = getBlockTop(lineElement, scrollContainer);
+  const lineHeight = Math.max(lineElement.getBoundingClientRect().height, 1);
+  const lineProgress = Math.max(0, Math.min(1, (effectiveScrollTop - lineTop) / lineHeight));
+
+  return targetIndex + lineProgress;
+}
+
+function getProgressFromCodeViewLines(
+  block: HTMLElement,
+  effectiveScrollTop: number,
+  scrollContainer?: HTMLElement,
+): number | null {
+  const logicalLine = getCodeViewLogicalLine(block, effectiveScrollTop, scrollContainer);
+  const lineElements = getCodeViewLineElements(block);
+  if (logicalLine === null || lineElements.length === 0) {
+    return null;
+  }
+
+  return Math.max(0, Math.min(1, logicalLine / lineElements.length));
+}
+
+function scrollToCodeViewLogicalLine(
+  block: HTMLElement,
+  logicalLine: number,
+  options: ScrollOptions,
+): boolean {
+  const lineElements = getCodeViewLineElements(block);
+  if (lineElements.length === 0) {
+    return false;
+  }
+
+  const { behavior = 'auto', scrollContainer, topOffset = 0 } = options;
+  const clampedLogicalLine = Math.max(0, Math.min(logicalLine, lineElements.length - 0.000001));
+  const lineIndex = Math.min(lineElements.length - 1, Math.floor(clampedLogicalLine));
+  const lineProgress = clampedLogicalLine - lineIndex;
+  const lineElement = lineElements[lineIndex];
+  const lineTop = getBlockTop(lineElement, scrollContainer);
+  const lineHeight = lineElement.getBoundingClientRect().height;
+  const scrollTo = lineTop + lineHeight * lineProgress - topOffset;
+
+  scrollToPosition(Math.max(0, scrollTo), behavior, scrollContainer);
+  return true;
+}
+
+function scrollToCodeViewLine(
+  block: HTMLElement,
+  progress: number,
+  options: ScrollOptions,
+): boolean {
+  const lineElements = getCodeViewLineElements(block);
+  if (lineElements.length === 0) {
+    return false;
+  }
+
+  const { behavior = 'auto', scrollContainer, topOffset = 0 } = options;
+  const logicalLine = Math.max(0, Math.min(progress, 0.999999)) * lineElements.length;
+  const lineIndex = Math.min(lineElements.length - 1, Math.floor(logicalLine));
+  const lineProgress = logicalLine - lineIndex;
+  const lineElement = lineElements[lineIndex];
+  const lineTop = getBlockTop(lineElement, scrollContainer);
+  const lineHeight = lineElement.getBoundingClientRect().height;
+  const scrollTo = lineTop + lineHeight * lineProgress - topOffset;
+
+  logScrollDebug('scrollToCodeViewLine', {
+    blockId: block.getAttribute('data-block-id') ?? '',
+    progress,
+    lineCount: lineElements.length,
+    logicalLine,
+    lineIndex,
+    lineProgress,
+    lineTop,
+    lineHeight,
+    topOffset,
+    scrollTo,
+  });
+
+  scrollToPosition(Math.max(0, scrollTo), behavior, scrollContainer);
+  return true;
+}
+
 /**
  * Find the block element at current scroll position
  * @returns blockId and progress (0-1) within that block
@@ -84,6 +188,11 @@ export function getBlockAtScrollPosition(options: ScrollOptions): { blockId: str
   
   const blockId = targetBlock.getAttribute('data-block-id');
   if (!blockId) return null;
+
+  const codeViewProgress = getProgressFromCodeViewLines(targetBlock, effectiveScrollTop, scrollContainer);
+  if (codeViewProgress !== null) {
+    return { blockId, progress: codeViewProgress };
+  }
   
   // Calculate progress within block
   const blockTop = getBlockTop(targetBlock, scrollContainer);
@@ -109,6 +218,10 @@ export function scrollToBlock(
   // Find the block element
   const block = container.querySelector<HTMLElement>(`[data-block-id="${blockId}"]`);
   if (!block) return false;
+
+  if (scrollToCodeViewLine(block, progress, options)) {
+    return true;
+  }
   
   // Calculate target scroll position
   const blockTop = getBlockTop(block, scrollContainer);
@@ -133,6 +246,28 @@ export function getLineForScrollPosition(
   options: ScrollOptions
 ): number | null {
   if (!lineMapper) return null;
+
+  const effectiveScrollTop = getScrollTop(options.scrollContainer) + (options.topOffset ?? 0);
+  const blocks = options.container.querySelectorAll<HTMLElement>('[data-block-id]');
+  let targetBlock: HTMLElement | null = null;
+  for (const block of Array.from(blocks)) {
+    const blockTop = getBlockTop(block, options.scrollContainer);
+    if (blockTop > effectiveScrollTop) {
+      break;
+    }
+    targetBlock = block;
+  }
+
+  if (!targetBlock && blocks.length > 0) {
+    targetBlock = blocks[0] as HTMLElement;
+  }
+
+  if (targetBlock) {
+    const codeViewLogicalLine = getCodeViewLogicalLine(targetBlock, effectiveScrollTop, options.scrollContainer);
+    if (codeViewLogicalLine !== null) {
+      return codeViewLogicalLine;
+    }
+  }
   
   const pos = getBlockAtScrollPosition(options);
   if (!pos) return null;
@@ -167,6 +302,14 @@ export function scrollToLine(
   const pos = lineMapper.getBlockPositionFromLine(line);
   if (!pos) {
     return false;
+  }
+
+  const block = options.container.querySelector<HTMLElement>(`[data-block-id="${pos.blockId}"]`);
+  if (block) {
+    const codeViewLineCount = getCodeViewLineElements(block).length;
+    if (codeViewLineCount > 0) {
+      return scrollToCodeViewLogicalLine(block, line, options);
+    }
   }
   
   return scrollToBlock(pos.blockId, pos.progress, options);
