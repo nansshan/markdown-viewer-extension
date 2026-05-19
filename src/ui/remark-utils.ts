@@ -93,6 +93,121 @@ export function rangesOverlap(aStart: number, aEnd: number, bStart: number, bEnd
   return aStart <= bEnd && aEnd >= bStart;
 }
 
+// ─── Sub-block line narrowing helpers ───────────────────────────────────────
+// Exported here (not in remark-mode.ts) so unit tests can import without DOM globals.
+
+const TEXT_NODE = 3; // Node.TEXT_NODE constant
+
+function toElement(node: Node): Element | null {
+  return ('tagName' in node) ? (node as unknown as Element) : (node as Node).parentElement;
+}
+
+/**
+ * Table row → exact markdown line.
+ * header row = blockStart, separator = blockStart+1, tbody[i] = blockStart+2+i
+ */
+export function findTrLineInBlock(node: Node, blockEl: Element): number | null {
+  let el: Element | null = toElement(node);
+  const blockStart = Number(blockEl.getAttribute('data-line')) || 0;
+  while (el && el !== blockEl) {
+    if ((el as Element).tagName === 'TR') {
+      const section = el.parentElement;
+      if (!section) return null;
+      if (section.tagName === 'THEAD') return blockStart;
+      if (section.tagName === 'TBODY') {
+        const rowIdx = Array.from(section.children).indexOf(el as HTMLElement);
+        return rowIdx >= 0 ? blockStart + 2 + rowIdx : null;
+      }
+      return null;
+    }
+    el = el.parentElement;
+  }
+  return null;
+}
+
+/**
+ * List item → approximate markdown line.
+ * Uses document-order <li> index within the block as the line offset.
+ * Works for flat and nested lists; may be off by ≤1 for multi-line items.
+ */
+export function findLiLineInBlock(node: Node, blockEl: Element): number | null {
+  let el: Element | null = toElement(node);
+  const blockStart = Number(blockEl.getAttribute('data-line')) || 0;
+  while (el && el !== blockEl) {
+    if (el.tagName === 'LI') {
+      const allLis = Array.from(blockEl.querySelectorAll('li'));
+      const idx = allLis.indexOf(el as HTMLElement);
+      return idx >= 0 ? blockStart + idx : null;
+    }
+    el = el.parentElement;
+  }
+  return null;
+}
+
+/**
+ * Code block → approximate markdown line.
+ * Walks text nodes inside <pre> counting newlines before the selection point.
+ * blockStart = opening fence line; code body starts at blockStart+1.
+ */
+export function findCodeLineInBlock(node: Node, offset: number, blockEl: Element): number | null {
+  const pre = (blockEl.tagName === 'PRE' ? blockEl : blockEl.querySelector('pre')) as Node | null;
+  if (!pre) return null;
+  const blockStart = Number(blockEl.getAttribute('data-line')) || 0;
+
+  let newlines = 0;
+  let found = false;
+
+  const walk = (n: Node): void => {
+    if (found) return;
+    if (n === node) {
+      newlines += ((n.textContent || '').slice(0, offset).match(/\n/g) || []).length;
+      found = true;
+      return;
+    }
+    if (n.nodeType === TEXT_NODE) {
+      newlines += (n.textContent || '').split('\n').length - 1;
+    }
+    for (const child of n.childNodes) {
+      if (found) break;
+      walk(child);
+    }
+  };
+  walk(pre);
+  // blockStart = ``` fence line; first code line = blockStart+1
+  return found ? blockStart + 1 + newlines : null;
+}
+
+/**
+ * Try to narrow a selection within a block to a specific line range.
+ * Tries table rows → list items → code lines, in that order.
+ * Returns null when the block type has no useful sub-structure.
+ */
+export function narrowLineInBlock(
+  startNode: Node, startOffset: number,
+  endNode: Node, endOffset: number,
+  blockEl: Element,
+): { startLine: number; endLine: number } | null {
+  // 1. Table row (exact)
+  const startTr = findTrLineInBlock(startNode, blockEl);
+  if (startTr !== null) {
+    const endTr = findTrLineInBlock(endNode, blockEl);
+    return { startLine: startTr, endLine: endTr ?? startTr };
+  }
+  // 2. List item (approximate — LI document order within block)
+  const startLi = findLiLineInBlock(startNode, blockEl);
+  if (startLi !== null) {
+    const endLi = findLiLineInBlock(endNode, blockEl);
+    return { startLine: startLi, endLine: endLi ?? startLi };
+  }
+  // 3. Code block (approximate — newline count in pre/code text)
+  const startCode = findCodeLineInBlock(startNode, startOffset, blockEl);
+  if (startCode !== null) {
+    const endCode = findCodeLineInBlock(endNode, endOffset, blockEl);
+    return { startLine: startCode, endLine: endCode ?? startCode };
+  }
+  return null;
+}
+
 /** Check if a block element is a media/image block that should not be annotatable. */
 export function isMediaBlock(el: HTMLElement): boolean {
   if (SKIP_ANNOTATION_TAGS.has(el.tagName)) return true;
