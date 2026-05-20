@@ -16,16 +16,9 @@ import type {
   ViewerIframeMessage,
   ViewerOpenDocumentMessage,
   ViewerUpdateContentMessage,
-  ViewerSyncHostNavigationMessage,
-  ViewerSyncHostUiMessage,
 } from '../../../src/integration/iframe-viewer-host';
 
-type OpenDocumentMessage = ViewerOpenDocumentMessage;
-type UpdateContentMessage = ViewerUpdateContentMessage;
-type SyncHostUiMessage = ViewerSyncHostUiMessage;
-type SyncHostNavigationMessage = ViewerSyncHostNavigationMessage;
-type ViewerEmbedMessage = ViewerIframeMessage;
-type DocumentMessage = OpenDocumentMessage | UpdateContentMessage;
+type DocumentMessage = ViewerOpenDocumentMessage | ViewerUpdateContentMessage;
 
 let initialized = false;
 const EMBED_MODE = new URLSearchParams(window.location.search).get('embed') === '1';
@@ -98,14 +91,6 @@ if (EMBED_MODE) {
   (document.head || document.documentElement).appendChild(style);
 }
 
-function syncHostUi(message: SyncHostUiMessage): void {
-  hostUiController.syncHostUi(message);
-}
-
-function syncHostNavigation(message: SyncHostNavigationMessage): void {
-  parentBridge.syncHostNavigation(message);
-}
-
 function scrollToAnchor(anchor: string): void {
   const normalized = decodeURIComponent(anchor || '').replace(/^#/, '').trim();
   if (!normalized) return;
@@ -132,7 +117,7 @@ function normalizeTargetLine(value: unknown): number | undefined {
   return Math.max(1, Math.floor(value));
 }
 
-function applyOpenDocumentMetadata(message: OpenDocumentMessage): void {
+function applyOpenDocumentMetadata(message: ViewerOpenDocumentMessage): void {
   const filename = String(message.filename || 'inline.md');
   const workspaceName = String(message.workspaceName || '');
   const workspaceFilePath = String(message.workspaceFilePath || '');
@@ -148,6 +133,32 @@ function applyOpenDocumentMetadata(message: OpenDocumentMessage): void {
   }
 
   applyCodeViewPresentation(codeView);
+
+  const fileNameSpan = document.getElementById('file-name');
+  if (fileNameSpan) {
+    fileNameSpan.textContent = filename;
+  }
+  document.title = filename;
+}
+
+let navToggleInjected = false;
+function injectNavToggleButton(): void {
+  if (navToggleInjected) return;
+  const toolbarCenter = document.querySelector('.toolbar-center');
+  if (!toolbarCenter) return;
+  navToggleInjected = true;
+
+  const btn = document.createElement('button');
+  btn.className = 'toolbar-btn';
+  btn.title = 'Toggle Navigation Bar';
+  btn.setAttribute('aria-label', 'Toggle Navigation Bar');
+  btn.innerHTML = `<svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor">
+    <path d="M4 10l3-3M4 10l3 3M16 10l-3-3M16 10l-3 3M4 10h12" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>`;
+  btn.addEventListener('click', () => {
+    window.parent.postMessage({ type: 'TOGGLE_NAV_BAR' }, '*');
+  });
+  toolbarCenter.appendChild(btn);
 }
 
 async function ensureViewerInitialized(initialContent: string): Promise<{
@@ -171,8 +182,11 @@ async function ensureViewerInitialized(initialContent: string): Promise<{
     });
   }
 
+  const runtime = await waitForViewerMainRuntime();
+  injectNavToggleButton();
+
   return {
-    runtime: await waitForViewerMainRuntime(),
+    runtime,
     wasInitialized,
   };
 }
@@ -188,7 +202,7 @@ async function handleDocumentMessage(message: DocumentMessage, mode: 'open' | 'u
   const targetLine = normalizeTargetLine(message.targetLine);
 
   if (mode === 'open') {
-    applyOpenDocumentMetadata(message as OpenDocumentMessage);
+    applyOpenDocumentMetadata(message as ViewerOpenDocumentMessage);
   }
 
   const { runtime, wasInitialized } = await ensureViewerInitialized(content);
@@ -207,7 +221,7 @@ async function handleDocumentMessage(message: DocumentMessage, mode: 'open' | 'u
   parentBridge.notifyViewerRendered();
 }
 
-function handleViewerMessage(data: ViewerEmbedMessage): void {
+function handleViewerMessage(data: ViewerIframeMessage): void {
   switch (data.type) {
     case 'OPEN_DOCUMENT':
       void handleDocumentMessage(data, 'open');
@@ -216,10 +230,10 @@ function handleViewerMessage(data: ViewerEmbedMessage): void {
       void handleDocumentMessage(data, 'update');
       return;
     case 'SYNC_HOST_UI':
-      syncHostUi(data);
+      hostUiController.syncHostUi(data);
       return;
     case 'SYNC_HOST_NAVIGATION':
-      syncHostNavigation(data);
+      parentBridge.syncHostNavigation(data);
       return;
     default:
       return;
@@ -227,4 +241,31 @@ function handleViewerMessage(data: ViewerEmbedMessage): void {
 }
 
 parentBridge.bindViewerMessages(handleViewerMessage);
+
+// Intercept clicks on relative file links and delegate to the workspace parent.
+// Without this, the browser navigates the iframe to a non-existent chrome-extension:// URL.
+document.addEventListener('click', (event) => {
+  const anchor = (event.target as HTMLElement).closest?.('a');
+  if (!anchor) return;
+
+  const href = anchor.getAttribute('href');
+  if (!href) return;
+
+  // Anchor-only links (#heading) are handled by the viewer's hashchange logic
+  if (href.startsWith('#')) return;
+
+  // All non-anchor links must preventDefault to avoid navigating the iframe away
+  // from the viewer page (which would destroy the viewer runtime).
+  event.preventDefault();
+
+  // Absolute URLs (http:, mailto:, tel:, etc.) open via window.open
+  if (/^[a-z][a-z0-9+\-.]*:/i.test(href)) {
+    window.open(href, '_blank');
+    return;
+  }
+
+  // Relative path — delegate to workspace parent to open via File System Access API
+  window.parent.postMessage({ type: 'WORKSPACE_NAVIGATE', path: href }, '*');
+});
+
 parentBridge.notifyViewerReady();

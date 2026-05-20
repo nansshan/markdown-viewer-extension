@@ -282,7 +282,7 @@ export function createWorkspaceEmbedHostUiController(
           (item as HTMLElement).style.display = level > maxDepth ? 'none' : '';
         });
       }
-    } else {
+    } else if (tocMode === 'none') {
       destroyFloatingTocPanel();
       if (tocDiv) {
         tocDiv.classList.add('hidden');
@@ -290,6 +290,8 @@ export function createWorkspaceEmbedHostUiController(
       }
       document.body.classList.add('toc-hidden');
     }
+    // When tocMode is undefined (host never sent a toc setting),
+    // leave the viewer's own TOC management untouched.
   };
 
   const applyPendingHostUiEffects = (): void => {

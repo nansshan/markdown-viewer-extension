@@ -13,6 +13,10 @@ export const closeIcon = `<svg ${A}><path d="M18 6 6 18"/><path d="m6 6 12 12"/>
 export const fileSearchIcon = `<svg ${A}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>`;
 export const textSearchIcon = `<svg ${A}><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/></svg>`;
 
+// ─── Navigation icons (Lucide, stroke-based, follows currentColor) ───
+export const arrowLeft = `<svg ${A}><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>`;
+export const arrowRight = `<svg ${A}><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>`;
+
 // ─── Folder icons (Lucide, stroke-based, follows currentColor) ───
 export const folderClosed = `<svg ${A}><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>`;
 export const folderOpen = `<svg ${A}><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg>`;

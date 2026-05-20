@@ -6,7 +6,7 @@ import { getWebExtensionApi } from '../../../src/utils/platform-info';
 import Localization, { DEFAULT_SETTING_LOCALE } from '../../../src/utils/localization';
 import { applyI18nText } from '../../../src/ui/popup/i18n-helpers';
 import { ALL_SUPPORTED_EXTENSIONS } from '../../../src/types/formats';
-import { chevronRight, chevronDown, folderClosed, folderOpen, folderPlus, searchIcon, fileSearchIcon, textSearchIcon, getFileIcon } from './file-icons';
+import { chevronRight, chevronDown, folderClosed, folderOpen, folderPlus, searchIcon, fileSearchIcon, textSearchIcon, arrowLeft, arrowRight, getFileIcon } from './file-icons';
 import themeManager from '../../../src/utils/theme-manager';
 import { createViewerIframeHostBridge } from '../../../src/integration/iframe-viewer-host';
 
@@ -65,12 +65,46 @@ const $previewFrame = document.getElementById('preview-frame') as HTMLIFrameElem
 const $previewEmptyText = $previewEmpty.querySelector('p');
 const $recentWorkspaces = document.getElementById('recent-workspaces')!;
 const $recentList = document.getElementById('recent-list')!;
+const $previewNav = document.getElementById('preview-nav')!;
+const $navBack = document.getElementById('nav-back') as HTMLButtonElement;
+const $navForward = document.getElementById('nav-forward') as HTMLButtonElement;
+const $navFilename = document.getElementById('nav-filename')!;
 
 let rootDirHandle: FileSystemDirectoryHandle | null = null;
 let currentFileDir = '';
 let swapPanelSide = false;
 let activeFilePath = '';
 let currentSearchQuery = '';
+
+// ─── Navigation history ───
+const navHistory: string[] = [];
+let navIndex = -1;
+let navInProgress = false;
+let navBarHidden = false;
+
+async function loadNavBarHidden(): Promise<void> {
+  try {
+    const result = await webExtensionApi.storage.local.get(['markdownViewerSettings']);
+    const stored = result.markdownViewerSettings as { workspaceNavBarHidden?: boolean } | undefined;
+    navBarHidden = Boolean(stored?.workspaceNavBarHidden);
+  } catch { /* keep default */ }
+}
+
+async function saveNavBarHidden(): Promise<void> {
+  try {
+    const storageLocal = webExtensionApi.storage.local as {
+      get: (keys: string | string[] | Record<string, unknown>) => Promise<Record<string, unknown>>;
+      set?: (items: Record<string, unknown>) => Promise<void>;
+    };
+    const result = await storageLocal.get(['markdownViewerSettings']);
+    const current = (result.markdownViewerSettings as Record<string, unknown>) || {};
+    if (typeof storageLocal.set === 'function') {
+      await storageLocal.set({
+        markdownViewerSettings: { ...current, workspaceNavBarHidden: navBarHidden },
+      });
+    }
+  } catch { /* ignore */ }
+}
 let workspaceTree: TreeNode[] = [];
 const expandedPaths = new Set<string>();
 let currentSearchMode: SearchMode = 'filename';
@@ -260,6 +294,8 @@ window.addEventListener('resize', updateResizeHandlePosition);
 document.getElementById('pick-icon')!.innerHTML = folderPlus;
 $changeBtn.innerHTML = folderPlus;
 $toggleSearchBtn.innerHTML = searchIcon;
+document.getElementById('nav-back-icon')!.innerHTML = arrowLeft;
+document.getElementById('nav-forward-icon')!.innerHTML = arrowRight;
 
 // ─── Extension matching ───
 function isSupportedFile(name: string): boolean {
@@ -883,6 +919,40 @@ function toggleSearchMode(): void {
   $fileSearchInput.select();
 }
 
+// ─── Navigation history ───
+function pushNavHistory(filePath: string): void {
+  if (navInProgress) return;
+  if (navHistory[navIndex] === filePath) return;
+  navHistory.splice(navIndex + 1);
+  navHistory.push(filePath);
+  navIndex = navHistory.length - 1;
+  updateNavButtons();
+}
+
+function updateNavButtons(): void {
+  $navBack.disabled = navIndex <= 0;
+  $navForward.disabled = navIndex >= navHistory.length - 1;
+  const current = navHistory[navIndex];
+  $navFilename.textContent = current ? current.split('/').pop() || '' : '';
+  $previewNav.style.display = !navBarHidden && navHistory.length > 0 ? '' : 'none';
+}
+
+async function navigateHistory(index: number): Promise<void> {
+  if (index < 0 || index >= navHistory.length) return;
+  const filePath = navHistory[index];
+  navIndex = index;
+  navInProgress = true;
+  updateNavButtons();
+  try {
+    await navigateToWorkspaceFile(filePath);
+  } finally {
+    navInProgress = false;
+  }
+}
+
+$navBack.addEventListener('click', () => navigateHistory(navIndex - 1));
+$navForward.addEventListener('click', () => navigateHistory(navIndex + 1));
+
 // ─── Resolve relative path against file directory ───
 function resolveRelativePath(fileDir: string, relativePath: string): string {
   const parts = fileDir.split('/').filter(Boolean);
@@ -948,6 +1018,8 @@ async function openFile(fileHandle: FileSystemFileHandle, options?: { targetLine
   const name = fileHandle.name;
   const workspaceFilePath = currentFileDir + name;
 
+  pushNavHistory(workspaceFilePath);
+
   // Save last opened file path
   sessionStorage.setItem(`workspace-last-file:${rootDirHandle?.name}`, workspaceFilePath);
 
@@ -995,8 +1067,15 @@ async function openWorkspace(dirHandle: FileSystemDirectoryHandle) {
   currentSearchMode = 'filename';
   $previewEmpty.style.display = '';
   $previewFrame.style.display = 'none';
+  $previewNav.style.display = 'none';
   resetPreviewFrameState();
   $previewFrame.src = 'about:blank';
+
+  // Reset navigation history
+  navHistory.length = 0;
+  navIndex = -1;
+  navInProgress = false;
+  updateNavButtons();
 
   rootDirHandle = dirHandle;
   directoryReadCache.clear();
@@ -1152,6 +1231,13 @@ $fileSearchInput.addEventListener('keydown', (event: KeyboardEvent) => {
 window.addEventListener('message', async (event: MessageEvent) => {
   if (event.source !== $previewFrame.contentWindow) return;
 
+  if (event.data?.type === 'TOGGLE_NAV_BAR') {
+    navBarHidden = !navBarHidden;
+    updateNavButtons();
+    void saveNavBarHidden();
+    return;
+  }
+
   if (event.data?.type === 'RESOLVE_IMAGE') {
     const { src, id } = event.data;
     const resolved = resolveRelativePath(currentFileDir, src);
@@ -1159,6 +1245,18 @@ window.addEventListener('message', async (event: MessageEvent) => {
     if (file) {
       const url = URL.createObjectURL(file);
       $previewFrame.contentWindow!.postMessage({ type: 'IMAGE_RESOLVED', id, url }, '*');
+    }
+    return;
+  }
+
+  // Relative link clicks from the rendered markdown inside the iframe
+  if (event.data?.type === 'WORKSPACE_NAVIGATE') {
+    const rawPath = String(event.data.path || '');
+    const hashIndex = rawPath.indexOf('#');
+    const pathOnly = hashIndex >= 0 ? rawPath.slice(0, hashIndex) : rawPath;
+    if (pathOnly) {
+      const resolved = resolveRelativePath(currentFileDir, pathOnly);
+      void navigateToWorkspaceFile(resolved);
     }
     return;
   }
@@ -1191,6 +1289,28 @@ window.addEventListener('message', async (event: MessageEvent) => {
     }
   }
 });
+
+// ─── Navigate to a workspace file (from markdown link click) ───
+async function navigateToWorkspaceFile(filePath: string): Promise<void> {
+  if (!rootDirHandle) return;
+  const segments = filePath.split('/').filter(Boolean);
+  if (segments.length === 0) return;
+  const fileName = segments[segments.length - 1];
+  const dirPath = segments.length > 1 ? segments.slice(0, -1).join('/') + '/' : '';
+
+  let dir = rootDirHandle;
+  for (let i = 0; i < segments.length - 1; i++) {
+    try { dir = await dir.getDirectoryHandle(segments[i]); }
+    catch { return; }
+  }
+  try {
+    const fh = await dir.getFileHandle(fileName);
+    activeFilePath = filePath;
+    currentFileDir = dirPath;
+    void syncTreeToActiveFile(filePath);
+    openFile(fh);
+  } catch { /* file not found */ }
+}
 
 // ─── Restore last file ───
 async function restoreLastFile(filePath: string): Promise<void> {
@@ -1324,6 +1444,7 @@ async function syncDarkClassFromSelectedTheme(): Promise<void> {
 Localization.init().then(async () => {
   await syncDarkClassFromSelectedTheme();
   await loadWorkspacePanelSide();
+  await loadNavBarHidden();
 
   if (webExtensionApi.storage?.onChanged) {
     webExtensionApi.storage.onChanged.addListener((changes, areaName) => {
