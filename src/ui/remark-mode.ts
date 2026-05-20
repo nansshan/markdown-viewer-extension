@@ -157,15 +157,26 @@ export function createRemarkMode(options: RemarkModeOptions): RemarkModeControll
     abortController?.abort();
     abortController = null;
 
+    // Commit any pending deletes immediately on exit
+    if (undoTimer) { clearTimeout(undoTimer); undoTimer = null; }
+    if (undoQueue.length) { commitPendingDeletes(); }
+
     hidePopup();
     hideTooltip();
-    hideSidebar(); // hideSidebar handles removing remark-panel-open after transition
+    onModeChange?.(false); // toolbar state changes immediately
+
+    // Choreographed exit: fade highlights first, then slide sidebar
     const container = getContainer();
     if (container) {
       container.classList.remove('remark-mode-active');
+      container.classList.add('remark-exiting');
+      // Highlights fade via CSS transition (120ms)
+      setTimeout(() => {
+        container.classList.remove('remark-exiting');
+        clearHighlights();
+      }, 160);
     }
-    clearHighlights();
-    onModeChange?.(false);
+    hideSidebar();
   }
 
   // ─── Persistence ─────────────────────────────────────────────────────────
@@ -592,7 +603,8 @@ export function createRemarkMode(options: RemarkModeOptions): RemarkModeControll
   // ─── Annotations ───────────────────────────────────────────────────────────
 
   function notifyCount(): void {
-    onAnnotationCountChange?.(annotations.length);
+    const visibleCount = annotations.filter(a => !softDeletedIds.has(a.id)).length;
+    onAnnotationCountChange?.(visibleCount);
   }
 
   function addAnnotation(
@@ -625,69 +637,82 @@ export function createRemarkMode(options: RemarkModeOptions): RemarkModeControll
     exportBtn.style.cursor = hasVisible ? '' : 'not-allowed';
   }
 
-  function removeAnnotation(id: string): void {
-    const ann = annotations.find(a => a.id === id);
-    if (!ann) return;
-    // Soft-delete: hide item and show undo toast with countdown
-    // Immediately exclude from export/copy by tracking in softDeletedIds
-    softDeletedIds.add(id);
-    updateExportBtnState();
-    const item = sidebarEl?.querySelector<HTMLElement>(`.remark-sidebar-item[data-ann-id="${id}"]`);
-    if (item) {
-      item.style.opacity = '0.3';
-      item.style.pointerEvents = 'none';
-      const UNDO_SECONDS = 5;
-      let remaining = UNDO_SECONDS;
-      // Show inline undo row with countdown and progress bar
-      const undo = document.createElement('div');
-      undo.className = 'remark-undo-row';
-      undo.setAttribute('role', 'status');
-      undo.setAttribute('aria-live', 'polite');
-      undo.innerHTML = `<span>${t('remark_deleted', 'Deleted')}</span><div class="remark-undo-actions"><span class="remark-undo-countdown">${remaining}s</span><button class="remark-undo-btn">↩ ${t('remark_undo', 'Undo')}</button></div><div class="remark-undo-progress" style="animation-duration:${UNDO_SECONDS}s"></div>`;
-      item.after(undo);
-      const countdownEl = undo.querySelector('.remark-undo-countdown')!;
-      let committed = false;
-      const tick = setInterval(() => {
-        remaining--;
-        if (remaining > 0) {
-          countdownEl.textContent = `${remaining}s`;
-        } else {
-          clearInterval(tick);
+  // ─── Undo Toast System ─────────────────────────────────────────────────────
+  // Gmail-style: item disappears immediately, quiet toast with Undo at sidebar bottom.
+  // No countdown, no progress bar, no dimmed corpse.
+
+  let undoQueue: Array<{ id: string; ann: RemarkAnnotation }> = [];
+  let undoTimer: ReturnType<typeof setTimeout> | null = null;
+  const UNDO_MS = 5000;
+
+  function showUndoToast(): void {
+    if (!sidebarEl) return;
+    let toast = sidebarEl.querySelector<HTMLElement>('.remark-undo-toast');
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.className = 'remark-undo-toast';
+      toast.setAttribute('role', 'status');
+      toast.setAttribute('aria-live', 'polite');
+      sidebarEl.appendChild(toast);
+    }
+    const count = undoQueue.length;
+    const label = count > 1
+      ? `${t('remark_deleted', 'Deleted')} ${count}`
+      : t('remark_deleted', 'Deleted');
+    toast.innerHTML = `<span>${label}</span><button class="remark-undo-btn">↩ ${t('remark_undo', 'Undo')}</button>`;
+    toast.style.display = 'flex';
+
+    toast.querySelector('.remark-undo-btn')?.addEventListener('click', () => {
+      if (undoTimer) { clearTimeout(undoTimer); undoTimer = null; }
+      for (const entry of undoQueue) {
+        softDeletedIds.delete(entry.id);
+        // Restore if already removed from array
+        if (!annotations.find(a => a.id === entry.id)) {
+          annotations.push(entry.ann);
         }
-      }, 1000);
-      const commit = () => {
-        if (committed) return;
-        committed = true;
-        clearInterval(tick);
-        undo.remove();
-        annotations = annotations.filter(a => a.id !== id);
-        softDeletedIds.delete(id);
-        renderHighlights();
-        renderSidebarContent();
-        notifyCount();
-        void saveAnnotations();
-      };
-      undo.querySelector('.remark-undo-btn')?.addEventListener('click', () => {
-        if (committed) return;
-        committed = true;
-        clearInterval(tick);
-        clearTimeout(timer);
-        softDeletedIds.delete(id);
-        updateExportBtnState();
-        undo.remove();
-        item.style.opacity = '';
-        item.style.pointerEvents = '';
-      });
-      const timer = setTimeout(commit, UNDO_SECONDS * 1000);
-    } else {
-      // Fallback: immediate delete (sidebar not rendered)
-      annotations = annotations.filter(a => a.id !== id);
-      softDeletedIds.delete(id);
+      }
+      undoQueue = [];
+      hideUndoToast();
       renderHighlights();
       renderSidebarContent();
       notifyCount();
+      updateExportBtnState();
       void saveAnnotations();
+    }, { once: true });
+
+    // Reset the commit timer
+    if (undoTimer) clearTimeout(undoTimer);
+    undoTimer = setTimeout(commitPendingDeletes, UNDO_MS);
+  }
+
+  function hideUndoToast(): void {
+    const toast = sidebarEl?.querySelector<HTMLElement>('.remark-undo-toast');
+    if (toast) toast.style.display = 'none';
+  }
+
+  function commitPendingDeletes(): void {
+    undoTimer = null;
+    for (const entry of undoQueue) {
+      annotations = annotations.filter(a => a.id !== entry.id);
+      softDeletedIds.delete(entry.id);
     }
+    undoQueue = [];
+    hideUndoToast();
+    notifyCount();
+    void saveAnnotations();
+  }
+
+  function removeAnnotation(id: string): void {
+    const ann = annotations.find(a => a.id === id);
+    if (!ann) return;
+    // Optimistic delete: disappear immediately, undo via toast
+    softDeletedIds.add(id);
+    undoQueue.push({ id, ann: { ...ann } });
+    updateExportBtnState();
+    renderHighlights();
+    renderSidebarContent();
+    notifyCount();
+    showUndoToast();
   }
 
   function updateAnnotationNote(id: string, note: string): void {
@@ -746,55 +771,22 @@ export function createRemarkMode(options: RemarkModeOptions): RemarkModeControll
     // Set initial copy button disabled state
     updateExportBtnState();
 
-    // Wire clear-all button — immediate clear with 5s undo (consistent with single-item delete)
+    // Wire clear-all button — uses unified undo toast system
     const clearBtn = el.querySelector<HTMLButtonElement>('.remark-sidebar-clear');
     if (clearBtn) {
       clearBtn.addEventListener('click', () => {
-        if (annotations.length === 0) return;
-        const UNDO_SECONDS = 5;
-        const savedAnnotations = [...annotations];
-        annotations = [];
+        const activeAnns = annotations.filter(a => !softDeletedIds.has(a.id));
+        if (activeAnns.length === 0) return;
+        // Queue all active annotations for undo
+        for (const ann of activeAnns) {
+          softDeletedIds.add(ann.id);
+          undoQueue.push({ id: ann.id, ann: { ...ann } });
+        }
+        updateExportBtnState();
         renderHighlights();
         renderSidebarContent();
         notifyCount();
-        void saveAnnotations();
-
-        const list = el.querySelector<HTMLElement>('.remark-sidebar-list');
-        if (!list) return;
-        let remaining = UNDO_SECONDS;
-        const undo = document.createElement('div');
-        undo.className = 'remark-undo-row';
-        undo.setAttribute('role', 'status');
-        undo.setAttribute('aria-live', 'polite');
-        undo.innerHTML = `<span>${t('remark_all_cleared', 'All cleared')}</span><div class="remark-undo-actions"><span class="remark-undo-countdown">${remaining}s</span><button class="remark-undo-btn">↩ ${t('remark_undo', 'Undo')}</button></div><div class="remark-undo-progress" style="animation-duration:${UNDO_SECONDS}s"></div>`;
-        list.prepend(undo);
-
-        const countdownEl = undo.querySelector<HTMLElement>('.remark-undo-countdown')!;
-        let committed = false;
-        const tick = setInterval(() => {
-          remaining--;
-          if (remaining > 0) countdownEl.textContent = `${remaining}s`;
-          else clearInterval(tick);
-        }, 1000);
-        const commit = (): void => {
-          if (committed) return;
-          committed = true;
-          clearInterval(tick);
-          undo.remove();
-        };
-        undo.querySelector('.remark-undo-btn')?.addEventListener('click', () => {
-          if (committed) return;
-          committed = true;
-          clearInterval(tick);
-          clearTimeout(timer);
-          undo.remove();
-          annotations = savedAnnotations;
-          renderHighlights();
-          renderSidebarContent();
-          notifyCount();
-          void saveAnnotations();
-        });
-        const timer = setTimeout(commit, UNDO_SECONDS * 1000);
+        showUndoToast();
       });
     }
 
@@ -804,7 +796,7 @@ export function createRemarkMode(options: RemarkModeOptions): RemarkModeControll
   function hideSidebar(): void {
     if (sidebarEl) {
       sidebarEl.classList.add('remark-sidebar-closed');
-      // Remove margin immediately so it transitions simultaneously with the sidebar slide-out
+      // Body margin transitions via CSS (same duration as sidebar slide-out)
       document.body.classList.remove('remark-panel-open');
       const el = sidebarEl;
       sidebarEl = null;
@@ -833,17 +825,20 @@ export function createRemarkMode(options: RemarkModeOptions): RemarkModeControll
     const countEl = sidebarEl.querySelector('.remark-sidebar-count');
     if (!list) return;
 
+    // Filter out soft-deleted annotations
+    const visibleAnnotations = annotations.filter(a => !softDeletedIds.has(a.id));
+
     // Update count badge in header
     if (countEl) {
-      countEl.textContent = annotations.length > 0 ? `(${annotations.length})` : '';
+      countEl.textContent = visibleAnnotations.length > 0 ? `(${visibleAnnotations.length})` : '';
     }
 
-    if (annotations.length === 0) {
+    if (visibleAnnotations.length === 0) {
       list.innerHTML = `<div class="remark-sidebar-empty">${t('remark_empty_hint', 'Select text to add remarks')}</div>`;
       return;
     }
 
-    const sorted = [...annotations].sort((a, b) => a.startLine - b.startLine);
+    const sorted = [...visibleAnnotations].sort((a, b) => a.startLine - b.startLine);
     list.innerHTML = sorted.map(ann => {
       const lineRef = formatLineRef(ann.startLine, ann.endLine);
       const quote = escapeHtml(truncate(ann.selectedText, 50));
@@ -882,9 +877,15 @@ export function createRemarkMode(options: RemarkModeOptions): RemarkModeControll
           const inViewport = rect.top >= 0 && rect.bottom <= window.innerHeight;
           if (!inViewport) {
             block.scrollIntoView({ behavior: 'auto', block: 'center' });
+            // Landing pulse after scroll settles
+            setTimeout(() => {
+              block.classList.add('remark-landing');
+              setTimeout(() => block.classList.remove('remark-landing'), 1000);
+            }, 300);
           } else {
-            block.classList.add('remark-flash');
-            setTimeout(() => block.classList.remove('remark-flash'), 600);
+            // Already visible — pulse immediately
+            block.classList.add('remark-landing');
+            setTimeout(() => block.classList.remove('remark-landing'), 1000);
           }
         }
       }
@@ -1018,7 +1019,10 @@ export function createRemarkMode(options: RemarkModeOptions): RemarkModeControll
     const container = getContainer();
     if (!container) return;
 
-    for (const ann of annotations) {
+    // Only render active (non-deleted) annotations
+    const visibleAnnotations = annotations.filter(a => !softDeletedIds.has(a.id));
+
+    for (const ann of visibleAnnotations) {
       const blocks = container.querySelectorAll<HTMLElement>('[data-line]');
       for (const block of blocks) {
         const { start: blockLine, end: blockEnd } = getBlockRange(block);
@@ -1177,13 +1181,22 @@ export function createRemarkMode(options: RemarkModeOptions): RemarkModeControll
       .remark-mode-active {
         cursor: text;
       }
-      /* Flash animation for blocks already in viewport when sidebar note is clicked */
-      @keyframes remark-flash-anim {
-        0%, 100% { background: var(--remark-bg, rgba(250, 204, 21, 0.15)); }
-        40% { background: rgba(250, 204, 21, 0.5); }
+      /* Choreographed exit: fade highlights before removing them */
+      .remark-exiting .remark-highlighted,
+      .remark-exiting .remark-badge,
+      .remark-exiting .remark-row-highlighted,
+      .remark-exiting .remark-li-highlighted {
+        opacity: 0;
+        transition: opacity 120ms ease-out;
       }
-      .remark-flash {
-        animation: remark-flash-anim 0.6s ease;
+      /* Landing pulse — stronger ring+glow for sidebar navigation */
+      @keyframes remark-landing-anim {
+        0%   { box-shadow: 0 0 0 3px rgba(250, 204, 21, 0.6); background-color: rgba(250, 204, 21, 0.25); }
+        100% { box-shadow: 0 0 0 0 transparent; background-color: transparent; }
+      }
+      .remark-landing {
+        animation: remark-landing-anim 1s ease-out;
+        border-radius: 3px;
       }
       /* Row-level highlight for table annotations with narrowed line ranges */
       tr.remark-row-highlighted { background: rgba(250, 204, 21, 0.35) !important; }
@@ -1360,42 +1373,29 @@ export function createRemarkMode(options: RemarkModeOptions): RemarkModeControll
         color: var(--color-danger, #ef4444);
         background: var(--color-danger-bg, rgba(239, 68, 68, 0.1));
       }
-      /* Undo row after soft-deleted item */
-      .remark-undo-row {
-        display: flex;
+      /* Undo toast — fixed at bottom of sidebar */
+      .remark-undo-toast {
+        display: none;
         align-items: center;
         justify-content: space-between;
-        padding: 4px 8px;
-        margin-bottom: 8px;
-        border-radius: 6px;
+        padding: 8px 12px;
+        border-top: 1px solid var(--color-border, #e2e8f0);
         background: var(--gray-100, #f3f4f6);
         font-size: 12px;
-        color: var(--gray-500, #6b7280);
-        position: relative;
-        overflow: hidden;
+        color: var(--gray-600, #4b5563);
+        flex-shrink: 0;
       }
-      .remark-undo-btn {
+      .remark-undo-toast .remark-undo-btn {
         border: 1px solid var(--color-border, #e2e8f0);
         border-radius: 4px;
         background: var(--color-bg-surface, #fff);
         cursor: pointer;
         font-size: 11px;
-        padding: 2px 8px;
+        padding: 3px 10px;
         color: var(--color-theme-accent, var(--color-primary, #2563eb));
+        transition: background 0.1s;
       }
-      .remark-undo-btn:hover { background: var(--gray-50, #f9fafb); }
-      .remark-undo-actions {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-      }
-      .remark-undo-countdown {
-        font-size: 10px;
-        color: var(--gray-400, #9ca3af);
-        font-variant-numeric: tabular-nums;
-        min-width: 18px;
-        text-align: right;
-      }
+      .remark-undo-toast .remark-undo-btn:hover { background: var(--gray-50, #f9fafb); }
       .remark-sidebar-quote {
         font-style: italic;
         color: var(--gray-500, #6b7280);
@@ -1607,27 +1607,6 @@ export function createRemarkMode(options: RemarkModeOptions): RemarkModeControll
           70% { box-shadow: 0 0 0 6px transparent; }
           100% { box-shadow: none; }
         }
-
-        /* Undo progress bar shrink */
-        .remark-undo-progress {
-          animation: remark-shrink linear forwards;
-        }
-        @keyframes remark-shrink {
-          from { width: 100%; }
-          to { width: 0%; }
-        }
-      }
-
-      /* Undo progress bar base style */
-      .remark-undo-progress {
-        position: absolute;
-        bottom: 0;
-        left: 0;
-        height: 2px;
-        width: 100%;
-        background: var(--color-theme-accent, var(--color-primary, #2563eb));
-        opacity: 0.4;
-        pointer-events: none;
       }
 
       /* Color button labels */
