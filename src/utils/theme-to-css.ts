@@ -353,23 +353,27 @@ ${styles.join('\n')}
 function generateTableCSS(tableStyle: TableStyleConfig, colorScheme: ColorScheme): string {
   const css: string[] = [];
 
-  // Base table styles - default to centered auto width.
+  // Base table styles - display:block + overflow-x:auto enables horizontal
+  // scrolling for wide tables while width:fit-content + margin:auto preserves
+  // centering for narrow ones.
   css.push(`#markdown-content table {
   border-collapse: collapse;
+  display: block;
+  overflow-x: auto;
+  width: fit-content;
+  max-width: 100%;
   margin: 13px auto;
-  overflow: auto;
 }
 
 /* Table layout: left alignment */
 #markdown-content.table-layout-left table {
-  width: auto;
   margin-left: 0;
   margin-right: auto;
 }
 
 /* Table layout: centered auto width */
 #markdown-content.table-layout-center table {
-  width: auto;
+  width: fit-content;
 }
 
 /* Table layout: full width */
