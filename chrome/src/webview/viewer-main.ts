@@ -1155,6 +1155,9 @@ export async function initializeViewerMain(options: ViewerMainOptions): Promise<
 
     const descriptor = buildViewerDocumentDescriptor(content);
     const persistedState = toViewerPersistedState(await getFileState());
+    if (persistedState.tocVisible === undefined) {
+      persistedState.tocVisible = !isMobile;
+    }
     logViewerDebug('renderMarkdown.request', {
       contentLength: content.length,
       restoreLine,
