@@ -17,6 +17,7 @@ import Localization from '../../../src/utils/localization';
 import themeManager from '../../../src/utils/theme-manager';
 import { loadAndApplyTheme } from '../../../src/utils/theme-to-css';
 import { initSlidevViewer } from '../../../src/slidev/slidev-viewer';
+import { resolveTocPresentation, type ViewerContainerMode } from '../../../src/core/viewer/viewer-session-contract';
 
 // Shared utilities from viewer-host
 import {
@@ -84,6 +85,7 @@ let searchPanel: SearchPanel | null = null;
 let tocPanel: TocPanel | null = null;
 let exportMenu: ExportMenu | null = null;
 let currentHighlights: Map<HTMLElement, HTMLElement> = new Map(); // Original element → wrapper
+const VIEWER_CONTAINER_MODE: ViewerContainerMode = 'panel';
 
 // Create plugin renderer using shared utility
 const pluginRenderer = createPluginRenderer(platform);
@@ -638,6 +640,8 @@ window.closeSearch = () => {
 // ============================================================================
 
 function initializeUI(): void {
+  const usesFloatingToc = resolveTocPresentation(VIEWER_CONTAINER_MODE) === 'floating';
+
   // Setup keyboard shortcut for search (Cmd/Ctrl+F)
   document.addEventListener('keydown', (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
@@ -652,7 +656,9 @@ function initializeUI(): void {
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'b') {
       e.preventDefault();
       e.stopPropagation();
-      tocPanel?.toggle();
+      if (usesFloatingToc) {
+        tocPanel?.toggle();
+      }
     }
   });
 
@@ -784,12 +790,14 @@ function initializeUI(): void {
   });
   document.body.appendChild(searchPanel.getElement());
 
-  tocPanel = createTocPanel({
-    onSelectHeading: (headingId) => {
-      scrollToHeadingById(headingId);
-    }
-  });
-  document.body.appendChild(tocPanel.getElement());
+  if (usesFloatingToc) {
+    tocPanel = createTocPanel({
+      onSelectHeading: (headingId) => {
+        scrollToHeadingById(headingId);
+      }
+    });
+    document.body.appendChild(tocPanel.getElement());
+  }
 
   const wrapper = document.getElementById('markdown-wrapper');
   if (wrapper) {

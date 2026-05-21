@@ -262,13 +262,7 @@ export function attachMarkdownViewerElementRuntime(
 
     const syncUi = (): void => {
       frameHostBridge.syncHostUi({
-        toc: 'none',
-      });
-    };
-
-    const enableFloatingToc = (): void => {
-      frameHostBridge.syncHostUi({
-        toc: 'floating',
+        containerMode: 'panel',
       });
     };
 
@@ -292,9 +286,6 @@ export function attachMarkdownViewerElementRuntime(
         frameHostBridge.reset();
         syncUi();
         const shouldShow = hasRenderableContent(currentValue);
-        if (shouldShow) {
-          enableFloatingToc();
-        }
         setFrameVisible(shouldShow);
         if (shouldShow) {
           const rawLine = target.getAttribute('scroll-line');
@@ -331,9 +322,6 @@ export function attachMarkdownViewerElementRuntime(
           currentValue = target.getAttribute('value') ?? '';
           const shouldShow = hasRenderableContent(currentValue);
           setFrameVisible(shouldShow);
-          if (shouldShow) {
-            enableFloatingToc();
-          }
           const rawLine = target.getAttribute('scroll-line');
           const line = rawLine ? Number.parseInt(rawLine, 10) : Number.NaN;
           syncRender(Number.isFinite(line) ? line : undefined);
@@ -360,9 +348,6 @@ export function attachMarkdownViewerElementRuntime(
         currentValue = markdown;
         const shouldShow = hasRenderableContent(currentValue);
         setFrameVisible(shouldShow);
-        if (shouldShow) {
-          enableFloatingToc();
-        }
         const rawLine = target.getAttribute('scroll-line');
         const line = rawLine ? Number.parseInt(rawLine, 10) : Number.NaN;
         syncRender(Number.isFinite(line) ? line : undefined);
@@ -578,6 +563,7 @@ export function attachMarkdownViewerElementRuntime(
     displayName: 'markdown-viewer',
     format: 'markdown',
     sourceToggleSupported: false,
+    containerMode: 'embedded',
     embedded: true,
   });
 

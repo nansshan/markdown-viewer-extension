@@ -163,7 +163,7 @@ function constrainSidebarWidth(width: number): number {
 }
 
 function notifyPreviewLayoutChanged(): void {
-  previewFrameBridge.syncHostUi({ layoutChanged: true });
+  previewFrameBridge.syncHostUi({ containerMode: 'browser', layoutChanged: true });
 }
 
 let previewFrameReady = false;
@@ -1006,11 +1006,10 @@ async function sendToViewer(content: string, filename: string, codeView = false,
 async function postHostUiToViewer(input: { themeId?: string } = {}): Promise<void> {
   const { themeId } = input;
   const targetThemeId = themeId ?? await themeManager.loadSelectedTheme();
-  if (!targetThemeId) {
-    return;
-  }
-
-  previewFrameBridge.syncHostUi({ themeId: targetThemeId });
+  previewFrameBridge.syncHostUi({
+    containerMode: 'browser',
+    themeId: targetThemeId,
+  });
 }
 
 async function openFile(fileHandle: FileSystemFileHandle, options?: { targetLine?: number }) {

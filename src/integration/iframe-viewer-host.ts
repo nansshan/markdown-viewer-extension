@@ -1,3 +1,6 @@
+
+export type ViewerIframeContainerMode = Extract<ViewerContainerMode, 'browser' | 'panel'>;
+
 export interface ViewerOpenDocumentMessage {
   type: 'OPEN_DOCUMENT';
   content?: string;
@@ -18,7 +21,7 @@ export interface ViewerUpdateContentMessage {
 export interface ViewerSyncHostUiMessage {
   type: 'SYNC_HOST_UI';
   themeId?: string;
-  toc?: 'none' | 'sidebar' | 'floating';
+  containerMode?: ViewerIframeContainerMode;
   tocDepth?: number;
   layoutChanged?: boolean;
 }

@@ -4,6 +4,31 @@ export type ViewerResolvedMode = 'rendered' | 'source' | 'code-reading';
 
 export type ViewerLayoutMode = 'normal' | 'fullscreen' | 'narrow';
 
+export type ViewerContainerMode = 'browser' | 'panel' | 'embedded';
+
+export type ViewerTocPresentation = 'sidebar' | 'floating';
+
+export function resolveDefaultTocVisibility(containerMode: ViewerContainerMode): boolean {
+  switch (containerMode) {
+    case 'browser':
+      return true;
+    case 'panel':
+      return false;
+    case 'embedded':
+      return false;
+  }
+}
+
+export function resolveTocPresentation(containerMode: ViewerContainerMode): ViewerTocPresentation {
+  switch (containerMode) {
+    case 'browser':
+      return 'sidebar';
+    case 'panel':
+    case 'embedded':
+      return 'floating';
+  }
+}
+
 export interface ViewerDocumentDescriptor {
   documentKey: string;
   displayName: string;
@@ -11,6 +36,7 @@ export interface ViewerDocumentDescriptor {
   format: 'markdown' | 'code' | 'diagram' | 'html-converted';
   language?: string;
   sourceToggleSupported: boolean;
+  containerMode: ViewerContainerMode;
   embedded: boolean;
 }
 

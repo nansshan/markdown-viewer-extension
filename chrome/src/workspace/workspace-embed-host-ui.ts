@@ -1,10 +1,11 @@
 import { createTocPanel } from '../../../src/ui/toc-panel';
 import type { TocPanel } from '../../../src/ui/toc-panel';
 import { extractHeadings } from '../../../src/core/markdown-utils';
+import { resolveTocPresentation } from '../../../src/core/viewer/viewer-session-contract';
 import type { ViewerSyncHostUiMessage } from '../../../src/integration/iframe-viewer-host';
 
 interface HostUiSnapshot {
-  toc?: ViewerSyncHostUiMessage['toc'];
+  containerMode?: ViewerSyncHostUiMessage['containerMode'];
   tocDepth?: number;
 }
 
@@ -31,7 +32,7 @@ export function createWorkspaceEmbedHostUiController(
   const { scrollToAnchor, applyTheme } = options;
 
   let hostUiSnapshot: HostUiSnapshot = {
-    toc: undefined,
+    containerMode: 'browser',
     tocDepth: undefined,
   };
 
@@ -234,7 +235,7 @@ export function createWorkspaceEmbedHostUiController(
     wrapper.focus({ preventScroll: true });
   };
 
-  const updateHostUiSnapshot = (message: Pick<ViewerSyncHostUiMessage, 'toc' | 'tocDepth'>): void => {
+  const updateHostUiSnapshot = (message: Pick<ViewerSyncHostUiMessage, 'containerMode' | 'tocDepth'>): void => {
     hostUiSnapshot = {
       ...hostUiSnapshot,
       ...message,
@@ -251,13 +252,13 @@ export function createWorkspaceEmbedHostUiController(
   };
 
   const applyHostUiSnapshot = (): void => {
-    const { toc, tocDepth } = hostUiSnapshot;
+    const { containerMode, tocDepth } = hostUiSnapshot;
 
     const tocDiv = document.getElementById('table-of-contents') as HTMLElement | null;
     const overlayDiv = document.getElementById('toc-overlay') as HTMLElement | null;
-    const tocMode = toc;
+    const tocPresentation = resolveTocPresentation(containerMode ?? 'browser');
 
-    if (tocMode === 'floating') {
+    if (tocPresentation === 'floating') {
       if (tocDiv) {
         tocDiv.classList.add('hidden');
         tocDiv.style.display = 'none';
@@ -266,32 +267,24 @@ export function createWorkspaceEmbedHostUiController(
       if (overlayDiv) overlayDiv.classList.add('hidden');
       ensureFloatingTocPanel();
       updateFloatingTocHeadings();
-    } else if (tocMode === 'sidebar') {
-      destroyFloatingTocPanel();
-      if (tocDiv) {
-        tocDiv.classList.remove('hidden');
-        tocDiv.style.display = '';
-      }
-      document.body.classList.remove('toc-hidden');
-      if (overlayDiv) overlayDiv.classList.add('hidden');
-      if (tocDiv && typeof tocDepth === 'number' && Number.isFinite(tocDepth)) {
-        const maxDepth = Math.max(1, Math.min(6, Math.floor(tocDepth)));
-        tocDiv.querySelectorAll('li').forEach((item) => {
-          const marginLeft = Number.parseInt((item as HTMLElement).style.marginLeft || '0', 10);
-          const level = Math.floor(marginLeft / 20) + 1;
-          (item as HTMLElement).style.display = level > maxDepth ? 'none' : '';
-        });
-      }
-    } else if (tocMode === 'none') {
-      destroyFloatingTocPanel();
-      if (tocDiv) {
-        tocDiv.classList.add('hidden');
-        tocDiv.style.display = 'none';
-      }
-      document.body.classList.add('toc-hidden');
+      return;
     }
-    // When tocMode is undefined (host never sent a toc setting),
-    // leave the viewer's own TOC management untouched.
+
+    destroyFloatingTocPanel();
+    if (tocDiv) {
+      tocDiv.classList.remove('hidden');
+      tocDiv.style.display = '';
+    }
+    document.body.classList.remove('toc-hidden');
+    if (overlayDiv) overlayDiv.classList.add('hidden');
+    if (tocDiv && typeof tocDepth === 'number' && Number.isFinite(tocDepth)) {
+      const maxDepth = Math.max(1, Math.min(6, Math.floor(tocDepth)));
+      tocDiv.querySelectorAll('li').forEach((item) => {
+        const marginLeft = Number.parseInt((item as HTMLElement).style.marginLeft || '0', 10);
+        const level = Math.floor(marginLeft / 20) + 1;
+        (item as HTMLElement).style.display = level > maxDepth ? 'none' : '';
+      });
+    }
   };
 
   const applyPendingHostUiEffects = (): void => {
@@ -316,7 +309,7 @@ export function createWorkspaceEmbedHostUiController(
     applyHostUiSnapshot();
     applyPendingHostUiEffects();
 
-    if (!afterRender || hostUiSnapshot.toc !== 'floating') {
+    if (!afterRender || resolveTocPresentation(hostUiSnapshot.containerMode ?? 'browser') !== 'floating') {
       return;
     }
 
@@ -370,9 +363,9 @@ export function createWorkspaceEmbedHostUiController(
         void applyTheme(message.themeId);
       }
 
-      if (message.toc !== undefined || message.tocDepth !== undefined) {
+      if (message.containerMode !== undefined || message.tocDepth !== undefined) {
         updateHostUiSnapshot({
-          toc: message.toc,
+          containerMode: message.containerMode,
           tocDepth: message.tocDepth,
         });
       }

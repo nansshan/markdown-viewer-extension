@@ -43,6 +43,7 @@ import type {
   ViewerPersistedState,
   ViewerResolvedMode,
 } from '../../../src/core/viewer/viewer-session-contract';
+import { resolveDefaultTocVisibility } from '../../../src/core/viewer/viewer-session-contract';
 import { createViewerSurfacePort } from '../../../src/core/viewer/viewer-surface-port';
 import type { ViewerDisplayMode } from '../../../src/core/viewer/viewer-host-adapter';
 import { setupImageContextMenu } from '../../../src/ui/image-context-menu';
@@ -443,6 +444,7 @@ export async function initializeViewerMain(options: ViewerMainOptions): Promise<
       format,
       language: codeReading?.language,
       sourceToggleSupported,
+      containerMode: 'browser',
       embedded: window.parent !== window,
     };
   };
@@ -790,7 +792,7 @@ export async function initializeViewerMain(options: ViewerMainOptions): Promise<
   if (initialState.tocVisible !== undefined) {
     initialTocVisible = initialState.tocVisible;
   } else {
-    initialTocVisible = !isMobile;
+    initialTocVisible = resolveDefaultTocVisibility('browser');
   }
   const initialTocClass = initialTocVisible ? '' : ' hidden';
 
@@ -1156,7 +1158,7 @@ export async function initializeViewerMain(options: ViewerMainOptions): Promise<
     const descriptor = buildViewerDocumentDescriptor(content);
     const persistedState = toViewerPersistedState(await getFileState());
     if (persistedState.tocVisible === undefined) {
-      persistedState.tocVisible = !isMobile;
+      persistedState.tocVisible = resolveDefaultTocVisibility(descriptor.containerMode);
     }
     logViewerDebug('renderMarkdown.request', {
       contentLength: content.length,

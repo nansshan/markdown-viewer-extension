@@ -20,6 +20,7 @@ import type { EmojiStyle } from '../../../src/types/docx.js';
 import Localization from '../../../src/utils/localization';
 import themeManager from '../../../src/utils/theme-manager';
 import { loadAndApplyTheme } from '../../../src/utils/theme-to-css';
+import { resolveTocPresentation, type ViewerContainerMode } from '../../../src/core/viewer/viewer-session-contract';
 
 // Shared utilities from viewer-host
 import {
@@ -100,6 +101,7 @@ let renderQueue: Promise<void> = Promise.resolve();
 let settingsPanel: SettingsPanel | null = null;
 let tocPanel: TocPanel | null = null;
 let exportMenu: ExportMenu | null = null;
+const VIEWER_CONTAINER_MODE: ViewerContainerMode = 'panel';
 
 // Listener cleanup
 let unsubscribeBridge: (() => void) | null = null;
@@ -765,6 +767,8 @@ function initializeUI(): void {
   }
 
   // Settings panel
+  const usesFloatingToc = resolveTocPresentation(VIEWER_CONTAINER_MODE) === 'floating';
+
   settingsPanel = createSettingsPanel({
     currentTheme: currentThemeId,
     currentLocale: savedSettings.locale,
@@ -825,13 +829,15 @@ function initializeUI(): void {
     container: rootContainer || undefined,
   });
 
-  tocPanel = createTocPanel({
-    onSelectHeading: (headingId) => {
-      scrollToHeadingById(headingId);
+  if (usesFloatingToc) {
+    tocPanel = createTocPanel({
+      onSelectHeading: (headingId) => {
+        scrollToHeadingById(headingId);
+      }
+    });
+    if (rootContainer) {
+      rootContainer.appendChild(tocPanel.getElement());
     }
-  });
-  if (rootContainer) {
-    rootContainer.appendChild(tocPanel.getElement());
   }
 
   const wrapper = rootContainer?.querySelector('#markdown-wrapper');

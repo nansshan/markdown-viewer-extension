@@ -13,6 +13,7 @@ import type {
   ViewerSession,
   ViewerSessionSnapshot,
 } from './viewer-session-contract';
+import { resolveDefaultTocVisibility } from './viewer-session-contract';
 
 type SessionState = ViewerSessionSnapshot & {
   rawContent: string;
@@ -196,7 +197,7 @@ function openDocument(
   state.pendingAnchor = command.anchor;
   state.themeId = command.persistedState?.themeId;
   state.zoomPercent = command.persistedState?.zoomPercent ?? DEFAULT_ZOOM_PERCENT;
-  state.tocVisible = command.persistedState?.tocVisible ?? !command.document.embedded;
+  state.tocVisible = command.persistedState?.tocVisible ?? resolveDefaultTocVisibility(command.document.containerMode);
   state.layoutMode = command.persistedState?.layoutMode ?? DEFAULT_LAYOUT_MODE;
   syncDerivedState(state);
 
