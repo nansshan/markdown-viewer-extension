@@ -12,6 +12,11 @@ import { findHeadingLine } from '../../../src/utils/heading-slug';
 import type { CacheStorage } from './cache-storage';
 import type { EmojiStyle } from '../../../src/types/docx.js';
 
+interface ThemeBootstrapData {
+  fontConfig: unknown;
+  registry: unknown;
+}
+
 export class MarkdownPreviewPanel {
   public static currentPanel: MarkdownPreviewPanel | undefined;
   public static readonly viewType = 'markdownViewerAdvanced';
@@ -754,7 +759,6 @@ export class MarkdownPreviewPanel {
           break;
 
         default:
-          console.warn(`Unknown message type: ${type}`);
           response = null;
       }
 
@@ -1192,6 +1196,7 @@ export class MarkdownPreviewPanel {
 
     const nonce = getNonce();
     const config = this._getConfiguration();
+    const themeBootstrap = this._getThemeBootstrapData();
 
     // CSP needs to allow iframe for diagram rendering
     return `<!DOCTYPE html>
@@ -1280,10 +1285,27 @@ export class MarkdownPreviewPanel {
     window.VSCODE_WEBVIEW_BASE_URI = '${webviewUri}';
     window.VSCODE_CONFIG = ${JSON.stringify(config)};
     window.VSCODE_NONCE = '${nonce}';
+    window.VSCODE_THEME_BOOTSTRAP = ${JSON.stringify(themeBootstrap)};
   </script>
   <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;
+  }
+
+  private _getThemeBootstrapData(): ThemeBootstrapData {
+    const themesRoot = vscode.Uri.joinPath(this._extensionUri, 'webview', 'themes');
+    return {
+      fontConfig: this._readBootstrapJson(vscode.Uri.joinPath(themesRoot, 'font-config.json')),
+      registry: this._readBootstrapJson(vscode.Uri.joinPath(themesRoot, 'registry.json')),
+    };
+  }
+
+  private _readBootstrapJson(uri: vscode.Uri): unknown {
+    try {
+      return JSON.parse(fs.readFileSync(uri.fsPath, 'utf8'));
+    } catch {
+      return null;
+    }
   }
 
   public dispose(): void {

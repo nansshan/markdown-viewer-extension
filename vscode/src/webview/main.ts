@@ -14,7 +14,7 @@ import type { ScrollSyncController } from '../../../src/core/line-based-scroll';
 import type { EmojiStyle } from '../../../src/types/docx.js';
 // Shared modules (same as Chrome/Mobile)
 import Localization from '../../../src/utils/localization';
-import themeManager from '../../../src/utils/theme-manager';
+import themeManager, { type FontConfigFile, type ThemeRegistry } from '../../../src/utils/theme-manager';
 import { loadAndApplyTheme } from '../../../src/utils/theme-to-css';
 import { initSlidevViewer } from '../../../src/slidev/slidev-viewer';
 import { resolveTocPresentation, type ViewerContainerMode } from '../../../src/core/viewer/viewer-session-contract';
@@ -46,6 +46,10 @@ declare global {
   var VSCODE_WEBVIEW_BASE_URI: string;
   var VSCODE_NONCE: string;
   var VSCODE_CONFIG: Record<string, unknown>;
+  var VSCODE_THEME_BOOTSTRAP: {
+    fontConfig?: FontConfigFile | null;
+    registry?: ThemeRegistry | null;
+  };
 }
 
 // Make platform globally available (required by loadAndApplyTheme)
@@ -89,6 +93,9 @@ const VIEWER_CONTAINER_MODE: ViewerContainerMode = 'panel';
 
 // Create plugin renderer using shared utility
 const pluginRenderer = createPluginRenderer(platform);
+let settingsThemesLoaded = false;
+let settingsThemesLoading: Promise<void> | null = null;
+let settingsLocalesLoaded = false;
 
 // ============================================================================
 // Initialization (similar to Mobile)
@@ -113,6 +120,11 @@ async function initialize(): Promise<void> {
     // Initialize platform (includes renderer initialization)
     await platform.init();
 
+    const bootstrap = window.VSCODE_THEME_BOOTSTRAP;
+    if (bootstrap?.fontConfig && bootstrap?.registry) {
+      themeManager.initializeWithData(bootstrap.fontConfig, null, bootstrap.registry);
+    }
+
     // Initialize localization (shared with Chrome/Mobile)
     await Localization.init();
 
@@ -136,15 +148,23 @@ async function initialize(): Promise<void> {
       console.warn('[VSCode Webview] Failed to load theme, using defaults:', error);
     }
 
-    // Load themes and locales for settings panel
-    loadThemesForSettings();
-    loadLocalesForSettings();
-    loadCacheStats();
-
     // Notify extension that webview is ready
     vscodeBridge.postMessage('READY', {});
+
+    void warmSettingsPanelData();
   } catch (error) {
     console.error('[VSCode Webview] Init failed:', error);
+  }
+}
+
+async function warmSettingsPanelData(): Promise<void> {
+  try {
+    await Promise.all([
+      loadThemesForSettings(),
+      loadLocalesForSettings(),
+      loadCacheStats(),
+    ]);
+  } catch {
   }
 }
 
@@ -760,9 +780,13 @@ function initializeUI(): void {
       // Reload cache stats
       await loadCacheStats();
     },
-    onShow: () => {
+    onShow: async () => {
+      await Promise.all([
+        loadThemesForSettings(),
+        loadLocalesForSettings(),
+      ]);
       // Refresh cache stats when panel is shown
-      loadCacheStats();
+      await loadCacheStats();
     }
   });
   document.body.appendChild(settingsPanel.getElement());
@@ -866,8 +890,13 @@ function handleOpenSearch(): void {
  */
 async function loadThemesForSettings(): Promise<void> {
   if (!settingsPanel) return;
+  if (settingsThemesLoaded) return;
+  if (settingsThemesLoading) {
+    await settingsThemesLoading;
+    return;
+  }
 
-  try {
+  settingsThemesLoading = (async () => {
     // Fetch theme registry
     const registryUrl = platform.resource.getURL('themes/registry.json');
     const response = await fetch(registryUrl);
@@ -910,7 +939,13 @@ async function loadThemesForSettings(): Promise<void> {
       });
     
     settingsPanel.setThemes(themes);
+    settingsThemesLoaded = true;
+  })();
+
+  try {
+    await settingsThemesLoading;
   } catch (error) {
+    settingsThemesLoading = null;
     console.warn('[VSCode Webview] Failed to load themes:', error);
   }
 }
@@ -920,10 +955,12 @@ async function loadThemesForSettings(): Promise<void> {
  */
 async function loadLocalesForSettings(): Promise<void> {
   if (!settingsPanel) return;
+  if (settingsLocalesLoaded) return;
 
   const registry = Localization.getLocaleRegistry();
   if (registry) {
     settingsPanel.setLocales(registry.locales);
+    settingsLocalesLoaded = true;
   } else {
     console.warn('[VSCode Webview] Locale registry not available');
   }

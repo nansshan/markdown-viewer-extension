@@ -144,6 +144,7 @@ const vsCodeDocumentService = new VSCodeDocumentService();
 
 class VSCodeResourceService {
   private baseUri = '';
+  private readonly textCache = new Map<string, Promise<string>>();
 
   setBaseUri(uri: string): void {
     this.baseUri = uri;
@@ -157,8 +158,40 @@ class VSCodeResourceService {
   }
 
   async fetch(path: string): Promise<string> {
-    // Request asset from extension host
-    return bridge.sendRequest('FETCH_ASSET', { path });
+    const cached = this.textCache.get(path);
+    if (cached) {
+      return cached;
+    }
+
+    const request = this._fetchText(path);
+    this.textCache.set(path, request);
+
+    try {
+      return await request;
+    } catch (error) {
+      this.textCache.delete(path);
+      throw error;
+    }
+  }
+
+  private async _fetchText(path: string): Promise<string> {
+    const resourceUrl = this.getURL(path);
+
+    try {
+      const response = await fetch(resourceUrl);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      return await response.text();
+    } catch (directFetchError) {
+      try {
+        return await bridge.sendRequest<string>('FETCH_ASSET', { path });
+      } catch (bridgeError) {
+        throw new Error(
+          `Failed to load asset ${path}: direct fetch=${String(directFetchError)} bridge=${String(bridgeError)}`
+        );
+      }
+    }
   }
 }
 

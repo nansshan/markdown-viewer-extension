@@ -68,6 +68,43 @@ function copyDirectory(sourceDir, targetDir) {
   }
 }
 
+function generateThemeBundles(outdir) {
+  const themesRoot = path.join(projectRoot, 'src', 'themes');
+  const registryPath = path.join(themesRoot, 'registry.json');
+  if (!fs.existsSync(registryPath)) {
+    return 0;
+  }
+
+  const registry = JSON.parse(fs.readFileSync(registryPath, 'utf8'));
+  const bundlesDir = path.join(outdir, 'webview', 'themes', 'bundles');
+  fs.mkdirSync(bundlesDir, { recursive: true });
+
+  let bundleCount = 0;
+  for (const entry of registry.themes || []) {
+    const presetPath = path.join(themesRoot, 'presets', entry.file);
+    if (!fs.existsSync(presetPath)) {
+      continue;
+    }
+
+    const theme = JSON.parse(fs.readFileSync(presetPath, 'utf8'));
+    const bundle = {
+      theme,
+      layoutScheme: JSON.parse(fs.readFileSync(path.join(themesRoot, 'layout-schemes', `${theme.layoutScheme}.json`), 'utf8')),
+      colorScheme: JSON.parse(fs.readFileSync(path.join(themesRoot, 'color-schemes', `${theme.colorScheme}.json`), 'utf8')),
+      tableStyle: JSON.parse(fs.readFileSync(path.join(themesRoot, 'table-styles', `${theme.tableStyle}.json`), 'utf8')),
+      codeTheme: JSON.parse(fs.readFileSync(path.join(themesRoot, 'code-themes', `${theme.codeTheme}.json`), 'utf8')),
+    };
+
+    fs.writeFileSync(
+      path.join(bundlesDir, `${theme.id}.json`),
+      JSON.stringify(bundle)
+    );
+    bundleCount += 1;
+  }
+
+  return bundleCount;
+}
+
 /**
  * Build extension host (Node.js environment)
  */
@@ -229,6 +266,8 @@ function copyAssets() {
   // Copy themes
   copyDirectory('src/themes', path.join(outdir, 'webview', 'themes'));
   console.log('  • themes');
+  const themeBundleCount = generateThemeBundles(outdir);
+  console.log(`  • ${themeBundleCount} theme bundles`);
 
   // Copy DrawIO stencils
   copyDirectory('node_modules/@markdown-viewer/drawio2svg/resources/stencils', path.join(outdir, 'webview', 'stencils'));

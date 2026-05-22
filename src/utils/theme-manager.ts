@@ -62,6 +62,8 @@ interface ThemeRegistry {
   categories: Record<string, CategoryInfo>;
 }
 
+export type { ThemeRegistry };
+
 /**
  * Theme metadata
  */
@@ -114,8 +116,11 @@ class ThemeManager {
    * @param fontConfig - Font configuration object
    * @param theme - Theme object
    */
-  initializeWithData(fontConfig: FontConfigFile, theme?: Theme | null): void {
+  initializeWithData(fontConfig: FontConfigFile, theme?: Theme | null, registry?: ThemeRegistry | null): void {
     this.fontConfig = fontConfig;
+    if (registry) {
+      this.registry = registry;
+    }
     if (theme) {
       this.currentTheme = theme;
     }
@@ -126,7 +131,9 @@ class ThemeManager {
    * Initialize theme manager by loading font config and registry
    */
   async initialize(): Promise<void> {
-    if (this.initialized) return;
+    if (this.initialized) {
+      return;
+    }
     
     try {
       const platform = getPlatform();
@@ -134,13 +141,12 @@ class ThemeManager {
         throw new Error('Platform not available');
       }
       
-      // Load font config
-      const fontConfigUrl = platform.resource.getURL('themes/font-config.json');
-      this.fontConfig = await fetchJSON(fontConfigUrl) as FontConfigFile;
-      
-      // Load theme registry
-      const registryUrl = platform.resource.getURL('themes/registry.json');
-      this.registry = await fetchJSON(registryUrl) as ThemeRegistry;
+      const [fontConfig, registry] = await Promise.all([
+        fetchJSON(platform.resource.getURL('themes/font-config.json')) as Promise<FontConfigFile>,
+        fetchJSON(platform.resource.getURL('themes/registry.json')) as Promise<ThemeRegistry>,
+      ]);
+      this.fontConfig = fontConfig;
+      this.registry = registry;
       
       this.initialized = true;
     } catch (error) {
@@ -281,6 +287,14 @@ class ThemeManager {
    */
   getCurrentTheme(): Theme | null {
     return this.currentTheme;
+  }
+
+  /**
+   * Set current theme without reloading from assets.
+   * Useful when a platform already has a resolved theme bundle.
+   */
+  setCurrentTheme(theme: Theme): void {
+    this.currentTheme = theme;
   }
 
   /**

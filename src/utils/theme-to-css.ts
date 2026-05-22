@@ -67,6 +67,14 @@ export interface ThemeConfig {
   diagramStyle?: 'normal' | 'handDrawn';
 }
 
+interface ResolvedThemeBundle {
+  theme: ThemeConfig;
+  layoutScheme: LayoutScheme;
+  colorScheme: ColorScheme;
+  tableStyle: TableStyleConfig;
+  codeTheme: CodeThemeConfig;
+}
+
 /**
  * Border configuration (layout properties only, color from ColorScheme)
  */
@@ -710,27 +718,33 @@ export function applyThemeCSS(css: string): void {
 export async function loadAndApplyTheme(themeId: string): Promise<void> {
   try {
     const platform = getPlatform();
-    
-    // Load theme preset
-    const theme = (await themeManager.loadTheme(themeId)) as unknown as ThemeConfig;
+    const bundleSupported = platform.platform === 'vscode';
 
-    // Load layout scheme
-    const layoutSchemeUrl = platform.resource.getURL(`themes/layout-schemes/${theme.layoutScheme}.json`);
-    const layoutScheme = await fetchJSON(layoutSchemeUrl) as LayoutScheme;
+    let theme: ThemeConfig;
+    let layoutScheme: LayoutScheme;
+    let colorScheme: ColorScheme;
+    let tableStyle: TableStyleConfig;
+    let codeTheme: CodeThemeConfig;
 
-    // Load color scheme
-    const colorSchemeUrl = platform.resource.getURL(`themes/color-schemes/${theme.colorScheme}.json`);
-    const colorScheme = await fetchJSON(colorSchemeUrl) as ColorScheme;
+    if (bundleSupported) {
+      await themeManager.initialize();
 
-    // Load table style
-    const tableStyle = await fetchJSON(
-      platform.resource.getURL(`themes/table-styles/${theme.tableStyle}.json`)
-    ) as TableStyleConfig;
-
-    // Load code theme
-    const codeTheme = await fetchJSON(
-      platform.resource.getURL(`themes/code-themes/${theme.codeTheme}.json`)
-    ) as CodeThemeConfig;
+      try {
+        const bundle = await fetchJSON(platform.resource.getURL(`themes/bundles/${themeId}.json`)) as ResolvedThemeBundle;
+        theme = bundle.theme;
+        layoutScheme = bundle.layoutScheme;
+        colorScheme = bundle.colorScheme;
+        tableStyle = bundle.tableStyle;
+        codeTheme = bundle.codeTheme;
+        themeManager.setCurrentTheme(theme);
+      } catch {
+        theme = (await themeManager.loadTheme(themeId)) as unknown as ThemeConfig;
+        [layoutScheme, colorScheme, tableStyle, codeTheme] = await loadThemeParts(theme, platform);
+      }
+    } else {
+      theme = (await themeManager.loadTheme(themeId)) as unknown as ThemeConfig;
+      [layoutScheme, colorScheme, tableStyle, codeTheme] = await loadThemeParts(theme, platform);
+    }
 
     // Generate and apply CSS
     const css = themeToCSS(theme, layoutScheme, colorScheme, tableStyle, codeTheme);
@@ -768,6 +782,19 @@ export async function loadAndApplyTheme(themeId: string): Promise<void> {
     console.error('[Theme] Error loading theme:', error);
     throw error;
   }
+}
+
+async function loadThemeParts(
+  theme: ThemeConfig,
+  platform: PlatformAPI,
+): Promise<[LayoutScheme, ColorScheme, TableStyleConfig, CodeThemeConfig]> {
+  const [layoutScheme, colorScheme, tableStyle, codeTheme] = await Promise.all([
+    fetchJSON(platform.resource.getURL(`themes/layout-schemes/${theme.layoutScheme}.json`)) as Promise<LayoutScheme>,
+    fetchJSON(platform.resource.getURL(`themes/color-schemes/${theme.colorScheme}.json`)) as Promise<ColorScheme>,
+    fetchJSON(platform.resource.getURL(`themes/table-styles/${theme.tableStyle}.json`)) as Promise<TableStyleConfig>,
+    fetchJSON(platform.resource.getURL(`themes/code-themes/${theme.codeTheme}.json`)) as Promise<CodeThemeConfig>,
+  ]);
+  return [layoutScheme, colorScheme, tableStyle, codeTheme];
 }
 
 /**
