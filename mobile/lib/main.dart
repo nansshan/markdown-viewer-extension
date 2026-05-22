@@ -1532,18 +1532,27 @@ class _MarkdownViewerHomeState extends State<MarkdownViewerHome> {
               // Close drawer first
               _scaffoldKey.currentState?.closeDrawer();
               // Escape id for JavaScript
-              final escapedId = id
-                  .replaceAll('\\', '\\\\')
-                  .replaceAll("'", "\\'");
-              // Scroll to heading with offset for better visibility
+              final escapedId = _escapeJs(id);
+              // Scroll to heading within the active scroll container.
               Future.delayed(const Duration(milliseconds: 100), () {
                 _controller.runJavaScript('''
                   (function() {
                     var el = document.getElementById('$escapedId');
-                    if (el) {
-                      var y = el.getBoundingClientRect().top + window.scrollY - 20;
-                      window.scrollTo({top: y, behavior: 'smooth'});
+                    if (!el) {
+                      return;
                     }
+
+                    var wrapper = document.getElementById('markdown-wrapper');
+                    if (wrapper) {
+                      var wrapperRect = wrapper.getBoundingClientRect();
+                      var elRect = el.getBoundingClientRect();
+                      var y = elRect.top - wrapperRect.top + wrapper.scrollTop - 20;
+                      wrapper.scrollTo({top: Math.max(0, y), behavior: 'auto'});
+                      return;
+                    }
+
+                    var fallbackY = el.getBoundingClientRect().top + window.scrollY - 20;
+                    window.scrollTo({top: fallbackY, behavior: 'auto'});
                   })();
                 ''');
               });

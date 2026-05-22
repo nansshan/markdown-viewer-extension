@@ -1,11 +1,12 @@
 {
   "name": "markdown-viewer-extension",
   "displayName": "docu.md Markdown Viewer",
-  "version": "4.1.1",
+  "version": "5.0.0",
   "description": "Markdown to perfect Word in one click — PlantUML, Mermaid, Vega, drawio, canvas, Infographic, Graphviz, LaTeX (editable), code highlighting, local processing.",
   "type": "module",
   "scripts": {
     "build:chrome": "node chrome/build.js",
+    "build:edge": "node edge/build.js",
     "build:firefox": "node firefox/build.js",
     "build:mobile": "node mobile/build.js",
     "build:slidev-shell": "npx vite build --config slidev-shell/vite.config.ts",

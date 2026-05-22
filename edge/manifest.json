@@ -4,40 +4,27 @@
   "version": "5.0.0",
   "default_locale": "en",
   "description": "__MSG_extensionDescription__",
-  "browser_specific_settings": {
-    "gecko": {
-      "id": "markdown-viewer@xicilion",
-      "strict_min_version": "140.0",
-      "data_collection_permissions": {
-        "required": [
-          "none"
-        ]
-      }
-    }
-  },
   "permissions": [
     "storage",
     "unlimitedStorage",
-    "tabs",
-    "activeTab",
+    "offscreen",
     "scripting",
-    "webRequest",
-    "webRequestBlocking",
-    "menus"
+    "contextMenus",
+    "alarms"
   ],
   "optional_permissions": [
     "downloads"
   ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' file: https://fonts.googleapis.com https://fonts.gstatic.com; object-src 'self'"
+  },
   "host_permissions": [
     "file:///*",
     "https://*/*",
     "http://*/*"
   ],
-  "content_security_policy": {
-    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com; object-src 'self'"
-  },
   "background": {
-    "page": "ui/background.html"
+    "service_worker": "core/background.js"
   },
   "content_scripts": [
     {
@@ -55,12 +42,12 @@
     {
       "resources": [
         "ui/styles.css",
-        "ui/background.html",
+        "ui/offscreen-render.html",
+        "icons/icon16.png",
         "core/main.js",
         "core/drawio2svg.js",
         "core/draw-uml.js",
         "libs/mermaid.min.js",
-        "icons/icon16.png",
         "*.woff2",
         "*.woff",
         "*.ttf",
@@ -76,12 +63,13 @@
         "slidev-shell/*",
         "slidev-shell/chunks/*",
         "slidev-shell/assets/*",
+        "slidev-shell/themes/*",
         "ui/workspace/viewer-embed.html",
         "ui/workspace/viewer-embed.js",
         "ui/workspace/dark-preload.js"
       ],
       "matches": [
-        "file:///*",
+        "file://*",
         "https://*/*",
         "http://*/*"
       ]
