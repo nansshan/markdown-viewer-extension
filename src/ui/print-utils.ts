@@ -30,6 +30,16 @@ export async function printElement(element: HTMLElement, title = document.title)
       body {
         background-color: ${pageBackgroundColor} !important;
       }
+      #remark-sidebar,
+      #gitbook-sidebar-header,
+      #gitbook-sidebar-body,
+      #gitbook-resize-handle,
+      #table-of-contents,
+      #toc-overlay,
+      #page-header,
+      #toolbar {
+        display: none !important;
+      }
       /* Diagram images: wrapper <div> sets the design width; <img> is fully auto (max-width:100% +
          max-height clamp). Both dims auto on <img> so replaced-element algorithm preserves
          aspect ratio when max-height triggers on tall diagrams. */

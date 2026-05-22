@@ -1095,7 +1095,11 @@ html[data-code-view] #markdown-content pre code .mv-code-line-content:empty::bef
   #page-header,
   #toolbar,
   #table-of-contents,
-  #toc-overlay {
+  #toc-overlay,
+  #remark-sidebar,
+  #gitbook-sidebar-header,
+  #gitbook-sidebar-body,
+  #gitbook-resize-handle {
     display: none !important;
   }
 
