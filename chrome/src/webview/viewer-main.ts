@@ -338,12 +338,8 @@ export async function initializeViewerMain(options: ViewerMainOptions): Promise<
   const getViewerSnapshot = () => viewerAssembler?.getSnapshot() ?? null;
 
   const logViewerDebug = (scope: string, payload?: Record<string, unknown>): void => {
-    // eslint-disable-next-line no-console
-    console.debug(`[ViewerDebug] ${scope}`, {
-      embedded: window.parent !== window,
-      currentUrl: getActiveDocumentUrl(),
-      ...payload,
-    });
+    void scope;
+    void payload;
   };
 
   const mapResolvedModeToDisplayMode = (resolvedMode: ViewerResolvedMode): ViewerDisplayMode => {
