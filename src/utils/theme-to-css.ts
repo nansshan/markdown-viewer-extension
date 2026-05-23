@@ -386,6 +386,8 @@ function generateTableCSS(tableStyle: TableStyleConfig, colorScheme: ColorScheme
 
 /* Table layout: full width */
 #markdown-content.table-layout-center-full-width table {
+  display: table;
+  overflow-x: visible;
   width: 100%;
   margin-left: auto;
   margin-right: auto;

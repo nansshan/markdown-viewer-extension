@@ -124,6 +124,10 @@ describe('Table CSS Generation', () => {
       'should include full-width layout variant',
     );
     assert.ok(
+      css.includes('display: table'),
+      'full-width layout should restore display:table',
+    );
+    assert.ok(
       css.includes('width: 100%'),
       'full-width layout should set width:100%',
     );
