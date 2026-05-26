@@ -1,0 +1,10 @@
+{
+  "extensionDescription": {
+    "message": "Markdown vers Word parfait — Mermaid, PlantUML, Vega, drawio, infographie, Graphviz, LaTeX, coloration syntaxique, traitement local.",
+    "description": "Description de l'extension affichée dans le Chrome Web Store"
+  },
+  "extensionName": {
+    "message": "docu.md Visionneuse Markdown",
+    "description": "Nom de l'extension"
+  }
+}

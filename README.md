@@ -9,7 +9,9 @@
 ![Install](icons/icon16.png) 🚀 **Install Now (Choose Your Platform):**
 
 - **Chrome / Chromium:** https://chromewebstore.google.com/detail/markdown-viewer/jekhhoflgcfoikceikgeenibinpojaoi
+- **Microsoft Edge:** https://microsoftedge.microsoft.com/addons/detail/documd-markdown-viewer/iphmkjlbnogmhofmmcahdhodiilokfca
 - **Firefox:** https://addons.mozilla.org/firefox/addon/markdown-viewer-extension/
+- **Obsidian:** https://community.obsidian.md/plugins/markdown-viewer-extension
 - **VS Code:** https://marketplace.visualstudio.com/items?itemName=xicilion.markdown-viewer-extension · [Open VSX](https://open-vsx.org/extension/xicilion/markdown-viewer-extension)
 - **Mobile (iOS/Android):** See [Mobile App](https://github.com/markdown-viewer/docs/blob/main/platforms/mobile.md)
 
@@ -52,7 +54,9 @@ Markdown Viewer is not just a Chrome extension anymore — it's a unified render
 | Platform | Best for | Docs |
 |---|---|---|
 | **Chrome Extension** | Reading local/online Markdown in browser + export | [chrome.md](https://github.com/markdown-viewer/docs/blob/main/platforms/chrome.md) |
+| **Edge Extension** | Microsoft Edge users who want the native Edge Add-ons install path | [edge.md](https://github.com/markdown-viewer/docs/blob/main/platforms/edge.md) |
 | **Firefox Extension** | Firefox users, same core features | [firefox.md](https://github.com/markdown-viewer/docs/blob/main/platforms/firefox.md) |
+| **Obsidian Plugin** | Vault-native preview + export on desktop and mobile | [obsidian.md](https://github.com/markdown-viewer/docs/blob/main/platforms/obsidian.md) |
 | **VS Code Extension** | Writing + live preview + export inside editor | [vscode.md](https://github.com/markdown-viewer/docs/blob/main/platforms/vscode.md) |
 | **Mobile App** | Reading/export on the go (iOS/Android) | [mobile.md](https://github.com/markdown-viewer/docs/blob/main/platforms/mobile.md) |
 
@@ -195,18 +199,22 @@ Document with 50 Mermaid diagrams:
 Pick one platform and install:
 
 - **Chrome / Chromium:** Chrome Web Store link above
+- **Microsoft Edge:** Edge Add-ons link above
 - **Firefox:** Firefox Add-ons link above
+- **Obsidian:** Community Plugins → Browse → search "Markdown Viewer"
 - **VS Code:** Extensions panel → search "Markdown Viewer" (or `code --install-extension markdown-viewer`)
 - **Mobile:** Open App Store / Google Play and search "Markdown Viewer"
 
 ### Step 2: Open a Markdown file (1 minute)
 
-**Browser (Chrome / Firefox) — local files:**
+**Browser (Chrome / Edge / Firefox) — local files:**
 
 1. Enable local file access in your browser extension settings
 2. ✅ Now you can double-click to open local `.md` files
 
 **VS Code:** Open any `.md` file → run the preview command (see [VS Code Extension](https://github.com/markdown-viewer/docs/blob/main/platforms/vscode.md))
+
+**Obsidian:** Open any note or supported diagram file → `Settings` → `Community plugins` → `Browse` → search `Markdown Viewer` → `Install` → `Enable`, then run **Open Markdown Viewer** from the Command Palette (see [Obsidian Plugin](https://github.com/markdown-viewer/docs/blob/main/platforms/obsidian.md))
 
 **Mobile:** Use file picker or open from cloud drive (details in [Mobile App](https://github.com/markdown-viewer/docs/blob/main/platforms/mobile.md))
 

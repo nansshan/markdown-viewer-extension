@@ -1,0 +1,10 @@
+{
+  "extensionDescription": {
+    "message": "Markdown в идеальный Word — Mermaid, PlantUML, Vega, drawio, инфографика, Graphviz, LaTeX, подсветка кода, локальная обработка.",
+    "description": "Описание расширения в Chrome Web Store"
+  },
+  "extensionName": {
+    "message": "docu.md Просмотрщик Markdown",
+    "description": "Название расширения"
+  }
+}

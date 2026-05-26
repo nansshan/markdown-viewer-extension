@@ -14,6 +14,7 @@ const createChromiumBuildOptions = (overrides = {}) => {
     outdir = 'dist/chrome',
     platformTag = 'chrome',
     readyMessage = 'chrome://extensions/ -> Load unpacked -> select dist/chrome/',
+    extraCopyDirectories = [],
   } = overrides;
 
   return {
@@ -23,6 +24,7 @@ const createChromiumBuildOptions = (overrides = {}) => {
     outdir,
     platformTag,
     readyMessage,
+    extraCopyDirectories,
   };
 };
 
@@ -53,7 +55,7 @@ const copyDirectory = (sourceDir, targetDir) => {
   return toCopy;
 };
 
-const copyFileIfExists = (sourcePath, targetPath, logMessage) => {
+const copyFileIfExists = (sourcePath, targetPath, logMessage, mergeJson = false) => {
   if (!fs.existsSync(sourcePath)) {
     return false;
   }
@@ -63,7 +65,13 @@ const copyFileIfExists = (sourcePath, targetPath, logMessage) => {
     fs.mkdirSync(targetDir, { recursive: true });
   }
 
-  fs.copyFileSync(sourcePath, targetPath);
+  if (mergeJson && sourcePath.endsWith('.json') && fs.existsSync(targetPath)) {
+    const sourceJson = JSON.parse(fs.readFileSync(sourcePath, 'utf8'));
+    const targetJson = JSON.parse(fs.readFileSync(targetPath, 'utf8'));
+    fs.writeFileSync(targetPath, JSON.stringify({ ...targetJson, ...sourceJson }, null, 2) + '\n', 'utf8');
+  } else {
+    fs.copyFileSync(sourcePath, targetPath);
+  }
   if (logMessage) {
     console.log(logMessage);
   }
@@ -159,6 +167,14 @@ export const createBuildConfig = (overrides = {}) => {
 
               fileCopies.push(...copyDirectory('icons', `${options.outdir}/icons`));
               fileCopies.push(...copyDirectory('src/_locales', `${options.outdir}/_locales`));
+              options.extraCopyDirectories.forEach(({ src, dest, mergeJson = false }) => {
+                fileCopies.push(
+                  ...copyDirectory(src, `${options.outdir}/${dest}`).map((file) => ({
+                    ...file,
+                    mergeJson,
+                  }))
+                );
+              });
               fileCopies.push(...copyDirectory('src/themes', `${options.outdir}/themes`));
               fileCopies.push(...copyDirectory('node_modules/@markdown-viewer/drawio2svg/resources/stencils', `${options.outdir}/stencils`));
 
@@ -183,7 +199,7 @@ export const createBuildConfig = (overrides = {}) => {
                 console.log(`📦 Copied dist/themes → ${options.outdir}/slidev-shell/themes`);
               }
 
-              fileCopies.forEach(({ src, dest, log }) => copyFileIfExists(src, dest, log));
+              fileCopies.forEach(({ src, dest, log, mergeJson }) => copyFileIfExists(src, dest, log, mergeJson));
 
               // Fix KaTeX font paths in styles.css
               // esbuild bundles fonts to dist/ root with relative paths like ./KaTeX_*.woff2

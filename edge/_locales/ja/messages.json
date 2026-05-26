@@ -1,0 +1,10 @@
+{
+  "extensionDescription": {
+    "message": "Markdown を完璧な Word に — Mermaid、PlantUML、Vega、drawio、canvas、インフォグラフィック、Graphviz、LaTeX（編集可能）、コードハイライト、ローカル処理.",
+    "description": "Chrome ウェブストアに表示される説明"
+  },
+  "extensionName": {
+    "message": "docu.md Markdown ビューア",
+    "description": "拡張機能の名称"
+  }
+}
