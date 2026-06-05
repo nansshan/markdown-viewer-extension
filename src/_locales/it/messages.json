@@ -271,14 +271,6 @@
     "message": "URL copiato. Incolla nella barra degli indirizzi per aprire.",
     "description": "Message shown when file URL is copied to clipboard in Firefox"
   },
-  "heading_h2_format": {
-    "message": "Capitolo {0}",
-    "description": "Format for h2 headings. {0} is the chapter number."
-  },
-  "heading_h2_numerals": {
-    "message": "arabic",
-    "description": "Numeral system for h2: chinese, arabic, roman"
-  },
   "history_clear": {
     "message": "Cancella cronologia",
     "description": "Clear history button"
@@ -724,8 +716,8 @@
     "description": "Toolbar layout toggle tooltip for normal mode"
   },
   "toolbar_print_disabled_title": {
-    "message": "La stampa è disponibile solo per file locali",
-    "description": "Tooltip when print button is disabled for remote files"
+    "message": "La stampa è bloccata dalla politica di sicurezza della pagina (sandbox)",
+    "description": "Tooltip when print button is disabled due to sandbox restriction"
   },
   "toolbar_print_title": {
     "message": "Stampa",

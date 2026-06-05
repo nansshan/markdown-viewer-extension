@@ -6,7 +6,7 @@
 import { getFilenameFromURL, getDocumentFilename, toMarkdownFilename } from '../../../../src/core/document-utils';
 import { applyZoom as applyZoomCore, exportHtmlFlow } from '../../../../src/core/viewer/viewer-host';
 import { createExportMenu } from '../../../../src/ui/export-menu';
-import { printElement } from '../../../../src/ui/print-utils';
+import { printElement, isPrintAvailable, PRINT_BLOCKED_BY_SANDBOX } from '../../../../src/ui/print-utils';
 import type {
   TranslateFunction,
   EscapeHtmlFunction,
@@ -53,7 +53,6 @@ export function createToolbarManager(options: ToolbarManagerOptions): ToolbarMan
     docxExporter,
     cancelScrollRestore,
     updateActiveTocItem,
-    toolbarPrintDisabledTitle,
     onBeforeZoom,
     onSetTocVisibility,
     enableSourceToggle,
@@ -259,10 +258,7 @@ export function createToolbarManager(options: ToolbarManagerOptions): ToolbarMan
     onExportHtml: () => exportHtmlFromToolbar(),
     onSaveFile: () => triggerSaveFile(),
     onPrint: () => triggerPrint(),
-    getPrintDisabledTitle: () => {
-      const protocol = document.location.protocol;
-      return (protocol === 'file:' || protocol === 'chrome-extension:') ? null : toolbarPrintDisabledTitle;
-    },
+    getPrintDisabledTitle: () => isPrintAvailable() ? null : translate('toolbar_print_disabled_title'),
   });
 
   function getScrollContainer(): HTMLElement | null {
@@ -575,16 +571,20 @@ export function createToolbarManager(options: ToolbarManagerOptions): ToolbarMan
 
   async function triggerPrint(): Promise<void> {
     const contentDiv = document.getElementById('markdown-page') as HTMLElement | null;
-    const protocol = document.location.protocol;
-    if (!contentDiv || (protocol !== 'file:' && protocol !== 'chrome-extension:')) {
+    if (!contentDiv) {
       return;
     }
 
     try {
       await printElement(contentDiv, document.title || getFilenameFromURL());
     } catch (error) {
-      console.error('Print request failed:', error);
-      alert(`Failed to open print preview: ${(error as Error).message}`);
+      const errMsg = error instanceof Error ? error.message : String(error);
+      if (errMsg === PRINT_BLOCKED_BY_SANDBOX) {
+        alert(translate('toolbar_print_disabled_title'));
+      } else {
+        console.error('Print request failed:', error);
+        alert(`Failed to open print preview: ${errMsg}`);
+      }
     }
   }
 

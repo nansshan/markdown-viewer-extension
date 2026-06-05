@@ -271,14 +271,6 @@
     "message": "URL copiada. Pega en la barra de direcciones para abrir.",
     "description": "Message shown when file URL is copied to clipboard in Firefox"
   },
-  "heading_h2_format": {
-    "message": "Capítulo {0}",
-    "description": "Format for h2 headings. {0} is the chapter number."
-  },
-  "heading_h2_numerals": {
-    "message": "arabic",
-    "description": "Numeral system for h2: chinese, arabic, roman"
-  },
   "history_clear": {
     "message": "Borrar historial",
     "description": "Botón borrar historial"
@@ -724,7 +716,7 @@
     "description": "Tooltip del botón de diseño normal"
   },
   "toolbar_print_disabled_title": {
-    "message": "La impresión solo está disponible para archivos locales",
+    "message": "La impresión está bloqueada por la política de seguridad de la página (sandbox)",
     "description": "Tooltip cuando el botón de impresión está deshabilitado para archivos remotos"
   },
   "toolbar_print_title": {

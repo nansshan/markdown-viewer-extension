@@ -38,7 +38,6 @@ export interface ToolbarManagerOptions {
   docxExporter: DocxExporter;
   cancelScrollRestore: () => void;
   updateActiveTocItem: () => void;
-  toolbarPrintDisabledTitle: string;
   /** Called before zoom changes to lock scroll position */
   onBeforeZoom?: () => void;
   /** Set TOC visibility from the host/session state owner */

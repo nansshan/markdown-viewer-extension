@@ -792,8 +792,6 @@ export async function initializeViewerMain(options: ViewerMainOptions): Promise<
   }
   const initialTocClass = initialTocVisible ? '' : ' hidden';
 
-  const toolbarPrintDisabledTitle = translate('toolbar_print_disabled_title');
-
   // Initialize toolbar manager
   const toolbarManager = createToolbarManager({
     translate,
@@ -808,7 +806,6 @@ export async function initializeViewerMain(options: ViewerMainOptions): Promise<
       // Scroll restoration is handled by markdown-viewer state.
     },
     updateActiveTocItem,
-    toolbarPrintDisabledTitle,
     onBeforeZoom: () => {
       // Lock scroll position before zoom change
       // No scroll lock needed in simplified scroll controller.

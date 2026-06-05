@@ -271,14 +271,6 @@
     "message": "URL कॉपी किया गया। खोलने के लिए एड्रेस बार में पेस्ट करें।",
     "description": "Message shown when file URL is copied to clipboard in Firefox"
   },
-  "heading_h2_format": {
-    "message": "अध्याय {0}",
-    "description": "Format for h2 headings. {0} is the chapter number."
-  },
-  "heading_h2_numerals": {
-    "message": "arabic",
-    "description": "Numeral system for h2: chinese, arabic, roman"
-  },
   "history_clear": {
     "message": "इतिहास साफ़ करें",
     "description": "Clear history button"
@@ -724,8 +716,8 @@
     "description": "Toolbar layout toggle tooltip for normal mode"
   },
   "toolbar_print_disabled_title": {
-    "message": "प्रिंट केवल स्थानीय फाइलों के लिए उपलब्ध है",
-    "description": "Tooltip when print button is disabled for remote files"
+    "message": "प्रिंट पृष्ठ की सुरक्षा नीति (सैंडबॉक्स) द्वारा अवरुद्ध है",
+    "description": "Tooltip when print button is disabled due to sandbox restriction"
   },
   "toolbar_print_title": {
     "message": "प्रिंट करें",

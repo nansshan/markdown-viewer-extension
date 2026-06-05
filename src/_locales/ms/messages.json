@@ -271,14 +271,6 @@
     "message": "URL disalin. Tampal dalam bar alamat untuk membuka.",
     "description": "Message shown when file URL is copied to clipboard in Firefox"
   },
-  "heading_h2_format": {
-    "message": "Bab {0}",
-    "description": "Format for h2 headings. {0} is the chapter number."
-  },
-  "heading_h2_numerals": {
-    "message": "arabic",
-    "description": "Numeral system for h2: chinese, arabic, roman"
-  },
   "history_clear": {
     "message": "Kosongkan sejarah",
     "description": "Clear history button"
@@ -724,8 +716,8 @@
     "description": "Toolbar layout toggle tooltip for normal mode"
   },
   "toolbar_print_disabled_title": {
-    "message": "Cetak hanya tersedia untuk fail tempatan",
-    "description": "Tooltip when print button is disabled for remote files"
+    "message": "Cetak disekat oleh dasar keselamatan halaman (sandbox)",
+    "description": "Tooltip when print button is disabled due to sandbox restriction"
   },
   "toolbar_print_title": {
     "message": "Cetak",

@@ -271,14 +271,6 @@
     "message": "URL copiée. Collez dans la barre d'adresse pour ouvrir.",
     "description": "Message shown when file URL is copied to clipboard in Firefox"
   },
-  "heading_h2_format": {
-    "message": "Chapitre {0}",
-    "description": "Format for h2 headings. {0} is the chapter number."
-  },
-  "heading_h2_numerals": {
-    "message": "arabic",
-    "description": "Numeral system for h2: chinese, arabic, roman"
-  },
   "history_clear": {
     "message": "Effacer l'historique",
     "description": "Bouton effacer historique"
@@ -724,7 +716,7 @@
     "description": "Infobulle pour la disposition normale"
   },
   "toolbar_print_disabled_title": {
-    "message": "L'impression n'est disponible que pour les fichiers locaux",
+    "message": "L'impression est bloquée par la politique de sécurité de la page (bac à sable)",
     "description": "Infobulle quand le bouton d'impression est désactivé pour les fichiers distants"
   },
   "toolbar_print_title": {

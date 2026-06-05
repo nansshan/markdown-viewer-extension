@@ -271,14 +271,6 @@
     "message": "URL skopiowany. Wklej w pasku adresu, aby otworzyć.",
     "description": "Message shown when file URL is copied to clipboard in Firefox"
   },
-  "heading_h2_format": {
-    "message": "Rozdział {0}",
-    "description": "Format for h2 headings. {0} is the chapter number."
-  },
-  "heading_h2_numerals": {
-    "message": "arabic",
-    "description": "Numeral system for h2: chinese, arabic, roman"
-  },
   "history_clear": {
     "message": "Wyczyść historię",
     "description": "Clear history button"
@@ -724,8 +716,8 @@
     "description": "Toolbar layout toggle tooltip for normal mode"
   },
   "toolbar_print_disabled_title": {
-    "message": "Drukowanie dostępne tylko dla plików lokalnych",
-    "description": "Tooltip when print button is disabled for remote files"
+    "message": "Drukowanie jest zablokowane przez politykę bezpieczeństwa strony (piaskownica)",
+    "description": "Tooltip when print button is disabled due to sandbox restriction"
   },
   "toolbar_print_title": {
     "message": "Drukuj",

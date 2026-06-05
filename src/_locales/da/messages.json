@@ -271,14 +271,6 @@
     "message": "URL kopieret. Indsæt i adresselinjen for at åbne.",
     "description": "Message shown when file URL is copied to clipboard in Firefox"
   },
-  "heading_h2_format": {
-    "message": "Kapitel {0}",
-    "description": "Format for h2 headings. {0} is the chapter number."
-  },
-  "heading_h2_numerals": {
-    "message": "arabic",
-    "description": "Numeral system for h2: chinese, arabic, roman"
-  },
   "history_clear": {
     "message": "Ryd historik",
     "description": "Clear history button"
@@ -724,8 +716,8 @@
     "description": "Toolbar layout toggle tooltip for normal mode"
   },
   "toolbar_print_disabled_title": {
-    "message": "Udskrivning er kun tilgængelig for lokale filer",
-    "description": "Tooltip when print button is disabled for remote files"
+    "message": "Udskrivning er blokeret af sidens sikkerhedspolitik (sandbox)",
+    "description": "Tooltip when print button is disabled due to sandbox restriction"
   },
   "toolbar_print_title": {
     "message": "Udskriv",

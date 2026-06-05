@@ -271,14 +271,6 @@
     "message": "URL kopiert. Zum Öffnen in die Adressleiste einfügen.",
     "description": "Message shown when file URL is copied to clipboard in Firefox"
   },
-  "heading_h2_format": {
-    "message": "Kapitel {0}",
-    "description": "Format for h2 headings. {0} is the chapter number."
-  },
-  "heading_h2_numerals": {
-    "message": "arabic",
-    "description": "Numeral system for h2: chinese, arabic, roman"
-  },
   "history_clear": {
     "message": "Verlauf löschen",
     "description": "Schaltfläche Verlauf löschen"
@@ -724,7 +716,7 @@
     "description": "Tooltip für normales Layout"
   },
   "toolbar_print_disabled_title": {
-    "message": "Drucken ist nur für lokale Dateien verfügbar",
+    "message": "Drucken wird durch die Sicherheitsrichtlinie der Seite (Sandbox) blockiert",
     "description": "Tooltip wenn Drucken-Button für Remote-Dateien deaktiviert ist"
   },
   "toolbar_print_title": {

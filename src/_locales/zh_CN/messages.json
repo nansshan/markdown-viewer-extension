@@ -271,14 +271,6 @@
     "message": "链接已复制，请粘贴到地址栏打开",
     "description": "Message shown when file URL is copied to clipboard in Firefox"
   },
-  "heading_h2_format": {
-    "message": "第{0}章",
-    "description": "Format for h2 headings. {0} is the chapter number."
-  },
-  "heading_h2_numerals": {
-    "message": "chinese",
-    "description": "Numeral system for h2: chinese, arabic, roman"
-  },
   "history_clear": {
     "message": "清空历史",
     "description": "清空历史按钮"
@@ -724,8 +716,8 @@
     "description": "布局按钮正常模式提示"
   },
   "toolbar_print_disabled_title": {
-    "message": "打印功能仅适用于本地文件",
-    "description": "远程文件时打印按钮禁用提示"
+    "message": "打印功能受页面安全策略（沙盒）限制",
+    "description": "沙盒限制时打印按钮禁用提示"
   },
   "toolbar_print_title": {
     "message": "打印",

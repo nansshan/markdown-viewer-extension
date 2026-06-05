@@ -271,14 +271,6 @@
     "message": "連結已複製，請貼上到網址列開啟",
     "description": "Message shown when file URL is copied to clipboard in Firefox"
   },
-  "heading_h2_format": {
-    "message": "第{0}章",
-    "description": "Format for h2 headings. {0} is the chapter number."
-  },
-  "heading_h2_numerals": {
-    "message": "chinese",
-    "description": "Numeral system for h2: chinese, arabic, roman"
-  },
   "history_clear": {
     "message": "清空歷史記錄",
     "description": "清空歷史記錄按鈕"
@@ -724,8 +716,8 @@
     "description": "佈局按鈕正常模式提示"
   },
   "toolbar_print_disabled_title": {
-    "message": "列印功能僅適用於本機檔案",
-    "description": "遠端檔案時列印按鈕停用提示"
+    "message": "列印功能受頁面安全策略（沙盒）限制",
+    "description": "沙盒限制時列印按鈕禁用提示"
   },
   "toolbar_print_title": {
     "message": "列印",

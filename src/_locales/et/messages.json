@@ -271,14 +271,6 @@
     "message": "URL kopeeritud. Kleebi aadressiribale avamiseks.",
     "description": "Message shown when file URL is copied to clipboard in Firefox"
   },
-  "heading_h2_format": {
-    "message": "Peatükk {0}",
-    "description": "Format for h2 headings. {0} is the chapter number."
-  },
-  "heading_h2_numerals": {
-    "message": "arabic",
-    "description": "Numeral system for h2: chinese, arabic, roman"
-  },
   "history_clear": {
     "message": "Kustuta ajalugu",
     "description": "Clear history button"
@@ -724,8 +716,8 @@
     "description": "Toolbar layout toggle tooltip for normal mode"
   },
   "toolbar_print_disabled_title": {
-    "message": "Printimine on saadaval ainult kohalike failide jaoks",
-    "description": "Tooltip when print button is disabled for remote files"
+    "message": "Printimine on lehe turbepoliitika (liivakast) tõttu blokeeritud",
+    "description": "Tooltip when print button is disabled due to sandbox restriction"
   },
   "toolbar_print_title": {
     "message": "Prindi",

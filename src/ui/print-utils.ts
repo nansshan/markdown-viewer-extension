@@ -1,3 +1,18 @@
+/**
+ * Check if print is available in the current browsing context.
+ * Returns false if the page is sandboxed (e.g., by CSP sandbox directive)
+ * which blocks window.print().
+ */
+export function isPrintAvailable(): boolean {
+  // CSP sandbox without allow-same-origin sets origin to 'null'
+  if (window.origin === 'null') {
+    return false;
+  }
+  return true;
+}
+
+export const PRINT_BLOCKED_BY_SANDBOX = 'PRINT_BLOCKED_BY_SANDBOX';
+
 export async function printElement(element: HTMLElement, title = document.title): Promise<void> {
   const markdownContent = element.querySelector('#markdown-content') as HTMLElement | null;
   // Extract theme background color for @page and html/body rules
@@ -81,9 +96,23 @@ export async function printElement(element: HTMLElement, title = document.title)
     }
   };
 
-  window.addEventListener('afterprint', cleanup, { once: true });
+  // Detect if print is blocked by sandbox (e.g., CSP sandbox directive)
+  // beforeprint fires synchronously when window.print() succeeds;
+  // if the page is sandboxed, window.print() is a no-op and no event fires.
+  let printTriggered = false;
+  const beforePrintHandler = () => { printTriggered = true; };
+  window.addEventListener('beforeprint', beforePrintHandler);
+
   window.print();
 
+  window.removeEventListener('beforeprint', beforePrintHandler);
+
+  if (!printTriggered) {
+    cleanup();
+    throw new Error(PRINT_BLOCKED_BY_SANDBOX);
+  }
+
+  window.addEventListener('afterprint', cleanup, { once: true });
   // Fallback cleanup in case afterprint doesn't fire
   setTimeout(cleanup, 2000);
 }
