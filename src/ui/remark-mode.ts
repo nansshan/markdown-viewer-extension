@@ -92,7 +92,7 @@ export function createRemarkMode(options: RemarkModeOptions): RemarkModeControll
   const CONFIG_STORAGE_KEY = 'remarkConfig';
   const CONFIG_DEFAULTS = {
     autoDeleteEmpty: true,
-    autoDeleteDelay: 3000,    // ms wait after blur before auto-delete sequence starts
+    autoDeleteDelay: 400,     // ms wait after blur before auto-delete
     closeAfterCopy: false,    // close file/tab after export
     highlightStyle: 'background' as 'background' | 'underline' | 'wavy' | 'border',
     defaultColor: 'yellow' as RemarkColor,
@@ -113,6 +113,9 @@ export function createRemarkMode(options: RemarkModeOptions): RemarkModeControll
         if (stored) Object.assign(config, JSON.parse(stored));
       }
     } catch { /* storage unavailable — use defaults */ }
+    // Always use the current default — stale persisted values can
+    // otherwise keep the old 3000ms delay and prevent the fix from taking effect.
+    config.autoDeleteDelay = CONFIG_DEFAULTS.autoDeleteDelay;
   }
 
   function saveConfig(): void {
@@ -135,6 +138,8 @@ export function createRemarkMode(options: RemarkModeOptions): RemarkModeControll
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area === 'local' && changes[CONFIG_STORAGE_KEY]?.newValue) {
         Object.assign(config, changes[CONFIG_STORAGE_KEY].newValue);
+        // Never let external config changes override the delay — it's not a user-facing setting
+        config.autoDeleteDelay = CONFIG_DEFAULTS.autoDeleteDelay;
         applyConfigStyles();
         if (active) renderHighlights();
       }
@@ -202,8 +207,6 @@ export function createRemarkMode(options: RemarkModeOptions): RemarkModeControll
     if (container) {
       container.classList.add('remark-mode-active');
       container.addEventListener('mouseup', handleSelection, { signal });
-      container.addEventListener('mouseover', handleHover, { signal });
-      container.addEventListener('mouseout', handleHoverOut, { signal });
     }
 
     // Clamp table selection to single cell — prevents cross-cell selection visually
@@ -305,6 +308,10 @@ export function createRemarkMode(options: RemarkModeOptions): RemarkModeControll
     } catch {
       // Start with empty annotations
     }
+    // Clean up empty annotations that may have been persisted before auto-delete
+    const before = annotations.length;
+    annotations = annotations.filter(a => a.note && a.note.trim());
+    if (annotations.length !== before) await saveAnnotations();
     if (active) {
       renderHighlights();
       renderSidebarContent();
@@ -410,9 +417,8 @@ export function createRemarkMode(options: RemarkModeOptions): RemarkModeControll
     const container = getContainer();
     if (!container) return;
 
-    // Click-to-annotate: collapsed selection = click without drag
+    // Only activate remark on manual text selection (drag), not on click
     if (sel.isCollapsed) {
-      handleClickToAnnotate(sel, container);
       return;
     }
 
@@ -867,6 +873,14 @@ export function createRemarkMode(options: RemarkModeOptions): RemarkModeControll
     onAnnotationCountChange?.(visibleCount);
   }
 
+  function updateSidebarCount(): void {
+    if (!sidebarEl) return;
+    const countEl = sidebarEl.querySelector('.remark-sidebar-count');
+    if (!countEl) return;
+    const visibleCount = annotations.filter(a => !softDeletedIds.has(a.id)).length;
+    countEl.textContent = visibleCount > 0 ? `(${visibleCount})` : '';
+  }
+
   function addAnnotation(
     selectedText: string, note: string, color: RemarkColor,
     startLine: number, endLine: number, blockId?: string
@@ -978,6 +992,7 @@ export function createRemarkMode(options: RemarkModeOptions): RemarkModeControll
       setTimeout(() => sidebarItem.remove(), 500);
     }
     notifyCount();
+    updateSidebarCount();
     showUndoToast();
     void saveAnnotations(); // Persist immediately so refresh reflects deletion
   }
@@ -991,6 +1006,7 @@ export function createRemarkMode(options: RemarkModeOptions): RemarkModeControll
     // Remove sidebar item directly (already collapsed by CSS animation)
     const sidebarItem = sidebarEl?.querySelector<HTMLElement>(`.remark-sidebar-item[data-ann-id="${id}"]`);
     if (sidebarItem) sidebarItem.remove();
+    updateSidebarCount();
     notifyCount();
     void saveAnnotations();
   }
@@ -1312,8 +1328,15 @@ export function createRemarkMode(options: RemarkModeOptions): RemarkModeControll
         }, 300);
       });
 
-      // Stop keyboard events from bubbling (prevents ext shortcuts)
-      ta.addEventListener('keydown', (e) => { e.stopPropagation(); });
+      // Enter blurs (loses focus); Ctrl/Cmd+Enter inserts newline
+      ta.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey) {
+          e.preventDefault();
+          ta.blur();
+          return;
+        }
+        e.stopPropagation();
+      });
       ta.addEventListener('keyup', (e) => { e.stopPropagation(); });
 
       // Auto-delete empty: double-fade sidebar note only, then remove (3s total)
@@ -1327,34 +1350,20 @@ export function createRemarkMode(options: RemarkModeOptions): RemarkModeControll
 
         const timer = setTimeout(() => {
           autoDeleteTimers.delete(id);
-          // Re-check: user may have re-focused or typed
           if (document.activeElement === ta) return;
           const annCheck = annotations.find(a => a.id === id);
           if (!annCheck || annCheck.note.trim()) return;
 
           const sidebarItem = sidebarEl?.querySelector<HTMLElement>(`.remark-sidebar-item[data-ann-id="${id}"]`);
-
-          // Phase 1: fade sidebar note (0→800ms)
-          if (sidebarItem) sidebarItem.classList.add('remark-item-fading');
-
-          setTimeout(() => {
-            // Phase 2: fade back (800→1600ms)
-            if (sidebarItem) sidebarItem.classList.remove('remark-item-fading');
-
+          if (sidebarItem) {
+            sidebarItem.classList.add('remark-item-collapsing');
+            // Remove from DOM after CSS transition completes
             setTimeout(() => {
-              // Re-check before final removal
-              if (document.activeElement === ta) return;
-              const annFinal = annotations.find(a => a.id === id);
-              if (!annFinal || annFinal.note.trim()) return;
-
-              // Phase 3: final fade + collapse (1600→3000ms)
-              if (sidebarItem) sidebarItem.classList.add('remark-item-collapsing');
-
-              setTimeout(() => {
-                silentRemoveAnnotation(id);
-              }, 1400);
-            }, 800);
-          }, 800);
+              if (document.activeElement !== ta) silentRemoveAnnotation(id);
+            }, 400);
+          } else {
+            silentRemoveAnnotation(id);
+          }
         }, config.autoDeleteDelay);
 
         autoDeleteTimers.set(id, timer);
@@ -1518,13 +1527,6 @@ export function createRemarkMode(options: RemarkModeOptions): RemarkModeControll
         animation: remark-item-landing 0.8s ease-out;
       }
 
-      /* Hover outline for selectable blocks */
-      .remark-mode-active [data-line][data-block-id]:not(:has(img, svg, canvas, figure, video)):hover {
-        outline: 1px dashed var(--color-nav-active-border, var(--color-theme-accent, var(--color-primary, #2563eb)));
-        outline-offset: 2px;
-        border-radius: 3px;
-      }
-
       /* Tooltip */
       .remark-tooltip {
         position: fixed;
@@ -1620,7 +1622,8 @@ export function createRemarkMode(options: RemarkModeOptions): RemarkModeControll
         border: 1px solid var(--color-border, #e2e8f0);
         margin-bottom: 8px;
         cursor: pointer;
-        transition: background 0.15s;
+        transition: background 0.15s, opacity 0.35s, max-height 0.35s, margin 0.35s, padding 0.35s;
+        overflow: hidden;
       }
       .remark-sidebar-item:hover {
         background: var(--gray-50, #f9fafb);

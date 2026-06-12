@@ -379,10 +379,6 @@
     "message": "Tilføj kommentar…",
     "description": "Placeholder and tooltip for adding a remark note"
   },
-  "remark_cancel": {
-    "message": "Annullér og fjern",
-    "description": "Button text for cancelling a new remark and removing the temporary mark"
-  },
   "remark_cfg_title": {
     "message": "Annotationstilstand",
     "description": "Title for remark mode settings card"
@@ -399,10 +395,6 @@
     "message": "Standardfarve",
     "description": "Config: default annotation color"
   },
-  "remark_cfg_done": {
-    "message": "Færdig",
-    "description": "Button to close config panel"
-  },
   "remark_cfg_font_size": {
     "message": "Skriftstørrelse",
     "description": "Config: sidebar font size"
@@ -410,14 +402,6 @@
   "remark_cfg_highlight_style": {
     "message": "Fremhævningsstil",
     "description": "Config: how text is visually marked"
-  },
-  "remark_cfg_opacity": {
-    "message": "Gennemsigtighed",
-    "description": "Config: highlight opacity"
-  },
-  "remark_cfg_reset": {
-    "message": "Nulstil til standard",
-    "description": "Button to reset all config to defaults"
   },
   "remark_cfg_style_bg": {
     "message": "Baggrund",
@@ -434,10 +418,6 @@
   "remark_cfg_style_wavy": {
     "message": "Bølget",
     "description": "Highlight style: wavy underline"
-  },
-  "remark_change_color": {
-    "message": "Skift farve",
-    "description": "Tooltip for changing the remark color"
   },
   "remark_clear_all": {
     "message": "Ryd alle kommentarer",
@@ -483,14 +463,6 @@
     "message": "Slettet",
     "description": "Status label shown after a remark is deleted"
   },
-  "remark_edit_note": {
-    "message": "Klik for at redigere",
-    "description": "Tooltip for editing an existing remark note"
-  },
-  "remark_empty": {
-    "message": "Vælg tekst for at tilføje noter",
-    "description": "Placeholder shown in sidebar when no remarks exist"
-  },
   "remark_empty_hint": {
     "message": "Vælg tekst for at tilføje kommentarer",
     "description": "Empty state hint in the remarks sidebar"
@@ -510,14 +482,6 @@
   "remark_mode": {
     "message": "Kommentar-tilstand",
     "description": "Toolbar button title for entering remark mode"
-  },
-  "remark_save": {
-    "message": "Gem",
-    "description": "Save button in the annotation popup"
-  },
-  "remark_settings": {
-    "message": "Indstillinger",
-    "description": "Settings button tooltip"
   },
   "remark_sidebar_title": {
     "message": "Kommentarer",

@@ -379,10 +379,6 @@
     "message": "Aggiungi annotazione…",
     "description": "Placeholder and tooltip for adding a remark note"
   },
-  "remark_cancel": {
-    "message": "Annulla e rimuovi",
-    "description": "Button text for cancelling a new remark and removing the temporary mark"
-  },
   "remark_cfg_title": {
     "message": "Modalità annotazione",
     "description": "Title for remark mode settings card"
@@ -399,10 +395,6 @@
     "message": "Colore predefinito",
     "description": "Config: default annotation color"
   },
-  "remark_cfg_done": {
-    "message": "Fatto",
-    "description": "Button to close config panel"
-  },
   "remark_cfg_font_size": {
     "message": "Dimensione carattere",
     "description": "Config: sidebar font size"
@@ -410,14 +402,6 @@
   "remark_cfg_highlight_style": {
     "message": "Stile evidenziazione",
     "description": "Config: how text is visually marked"
-  },
-  "remark_cfg_opacity": {
-    "message": "Opacità",
-    "description": "Config: highlight opacity"
-  },
-  "remark_cfg_reset": {
-    "message": "Ripristina impostazioni",
-    "description": "Button to reset all config to defaults"
   },
   "remark_cfg_style_bg": {
     "message": "Sfondo",
@@ -434,10 +418,6 @@
   "remark_cfg_style_wavy": {
     "message": "Ondulato",
     "description": "Highlight style: wavy underline"
-  },
-  "remark_change_color": {
-    "message": "Cambia colore",
-    "description": "Tooltip for changing the remark color"
   },
   "remark_clear_all": {
     "message": "Cancella tutte le annotazioni",
@@ -483,14 +463,6 @@
     "message": "Eliminato",
     "description": "Status label shown after a remark is deleted"
   },
-  "remark_edit_note": {
-    "message": "Fai clic per modificare",
-    "description": "Tooltip for editing an existing remark note"
-  },
-  "remark_empty": {
-    "message": "Seleziona testo per aggiungere note",
-    "description": "Placeholder shown in sidebar when no remarks exist"
-  },
   "remark_empty_hint": {
     "message": "Seleziona il testo per aggiungere annotazioni",
     "description": "Empty state hint in the remarks sidebar"
@@ -510,14 +482,6 @@
   "remark_mode": {
     "message": "Modalità annotazioni",
     "description": "Toolbar button title for entering remark mode"
-  },
-  "remark_save": {
-    "message": "Salva",
-    "description": "Save button in the annotation popup"
-  },
-  "remark_settings": {
-    "message": "Impostazioni",
-    "description": "Settings button tooltip"
   },
   "remark_sidebar_title": {
     "message": "Annotazioni",

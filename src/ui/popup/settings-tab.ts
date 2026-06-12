@@ -629,7 +629,6 @@ export function createSettingsTabManager({
     function saveRemarkConfig(): void {
       const cfg = {
         autoDeleteEmpty: autoDeleteEl!.checked,
-        autoDeleteDelay: 3000,
         closeAfterCopy: closeAfterCopyEl!.checked,
         highlightStyle: highlightStyleEl!.value,
         defaultColor: defaultColorEl!.value,

@@ -379,10 +379,6 @@
     "message": "Додати примітку…",
     "description": "Placeholder and tooltip for adding a remark note"
   },
-  "remark_cancel": {
-    "message": "Скасувати й видалити",
-    "description": "Button text for cancelling a new remark and removing the temporary mark"
-  },
   "remark_cfg_title": {
     "message": "Режим анотацій",
     "description": "Title for remark mode settings card"
@@ -399,10 +395,6 @@
     "message": "Колір за замовчуванням",
     "description": "Config: default annotation color"
   },
-  "remark_cfg_done": {
-    "message": "Готово",
-    "description": "Button to close config panel"
-  },
   "remark_cfg_font_size": {
     "message": "Розмір шрифту",
     "description": "Config: sidebar font size"
@@ -410,14 +402,6 @@
   "remark_cfg_highlight_style": {
     "message": "Стиль виділення",
     "description": "Config: how text is visually marked"
-  },
-  "remark_cfg_opacity": {
-    "message": "Непрозорість",
-    "description": "Config: highlight opacity"
-  },
-  "remark_cfg_reset": {
-    "message": "Скинути налаштування",
-    "description": "Button to reset all config to defaults"
   },
   "remark_cfg_style_bg": {
     "message": "Фон",
@@ -434,10 +418,6 @@
   "remark_cfg_style_wavy": {
     "message": "Хвилястий",
     "description": "Highlight style: wavy underline"
-  },
-  "remark_change_color": {
-    "message": "Змінити колір",
-    "description": "Tooltip for changing the remark color"
   },
   "remark_clear_all": {
     "message": "Очистити всі примітки",
@@ -483,14 +463,6 @@
     "message": "Видалено",
     "description": "Status label shown after a remark is deleted"
   },
-  "remark_edit_note": {
-    "message": "Натисніть, щоб редагувати",
-    "description": "Tooltip for editing an existing remark note"
-  },
-  "remark_empty": {
-    "message": "Виділіть текст, щоб додати нотатку",
-    "description": "Placeholder shown in sidebar when no remarks exist"
-  },
   "remark_empty_hint": {
     "message": "Виділіть текст, щоб додати примітки",
     "description": "Empty state hint in the remarks sidebar"
@@ -510,14 +482,6 @@
   "remark_mode": {
     "message": "Режим приміток",
     "description": "Toolbar button title for entering remark mode"
-  },
-  "remark_save": {
-    "message": "Зберегти",
-    "description": "Save button in the annotation popup"
-  },
-  "remark_settings": {
-    "message": "Налаштування",
-    "description": "Settings button tooltip"
   },
   "remark_sidebar_title": {
     "message": "Примітки",
