@@ -646,6 +646,21 @@ class DocxExporter {
         }));
       }
 
+      // Handle cross-type gap: both table and blockquote produce DOCX Table objects,
+      // so consecutive different types need a spacer paragraph between them.
+      if ((node.type === 'blockquote' && lastNodeType === 'table') ||
+          (node.type === 'table' && lastNodeType === 'blockquote')) {
+        // Use the previous element's "after" spacing
+        const prevGap = lastNodeType === 'table'
+          ? this.themeStyles?.blockSpacing?.table
+          : this.themeStyles?.blockSpacing?.blockquote;
+        const prevAfter = prevGap?.after ?? 120;
+        elements.push(new Paragraph({
+          text: '',
+          spacing: { before: prevAfter, after: prevAfter, line: 240 },
+        }));
+      }
+
       const converted = await this.convertNode(node);
       if (converted) {
         if (Array.isArray(converted)) {

@@ -332,6 +332,12 @@ tags: [markdown, test, demo]
 
 上表导出 docx 时，Name 应该为两行。
 
+| Name | Description |
+|------|-------------|
+| `rt1`, `rt2` |  Foo. |
+| `tc`         | Bar. |
+> 这个引用块与表格之间需要留白
+
 ---
 
 ## 5. 代码
