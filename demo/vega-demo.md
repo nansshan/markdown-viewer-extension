@@ -248,6 +248,86 @@
 }
 ```
 
+### 3.3 折线丢失 bug
+
+```vega-lite
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "title": "图测试",
+  "width": 400,
+  "height": 250,
+  "data": {
+    "values": [
+      {
+        "title": "上周",
+        "value": 222,
+        "type": "故障1"
+      },
+      {
+        "title": "上周",
+        "value": 26,
+        "type": "故障2"
+      },
+      {
+        "title": "上周",
+        "value": 171,
+        "type": "故障3"
+      },
+      {
+        "title": "本周",
+        "value": 333,
+        "type": "故障1"
+      },
+      {
+        "title": "本周",
+        "value": 31,
+        "type": "故障2"
+      },
+      {
+        "title": "本周",
+        "value": 189,
+        "type": "故障3"
+      }
+    ]
+  },
+  "mark": "line",
+  "encoding": {
+    "x": {
+      "field": "title",
+      "type": "nominal",
+      "title": "时间",
+      "axis": {
+        "labelAngle": -20
+      }
+    },
+    "y": {
+      "field": "value",
+      "type": "quantitative",
+      "title": "故障1"
+    },
+    "color": {
+      "field": "type",
+      "type": "nominal",
+      "scale": {
+        "domain": [
+          "故障1",
+          "故障2",
+          "故障3"
+        ],
+        "range": [
+          "#4CAF50",
+          "#F44336",
+          "#d40306"
+        ]
+      },
+      "title": "类型"
+    },
+    "xOffset": {
+      "field": "type"
+    }
+  }
+}
+```
 ---
 
 ## 4. 饼图和甜甜圈图
